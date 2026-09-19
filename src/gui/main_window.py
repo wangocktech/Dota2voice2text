@@ -2,7 +2,7 @@
 
 from pynput import keyboard, mouse
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QEvent, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -51,7 +51,6 @@ class MainWindow(QMainWindow):
         self.controller = None
         self.loading = False
         self.force_quit = False
-        self.tray_notice_shown = False
 
         self.settings = load_settings()
 
@@ -752,39 +751,75 @@ class MainWindow(QMainWindow):
             text
         )
 
-    # ========================================================
-    # Close / Quit
+     # ========================================================
+    # Tray notifications
     # ========================================================
 
-    def closeEvent(
-        self,
-        event,
-    ):
+    def show_tray_notification(self):
+        self.tray.showMessage(
+            "Dota2voice2text",
+            (
+                "Программа свёрнута в системный трей "
+                "и продолжает работать в фоне."
+            ),
+            QSystemTrayIcon.MessageIcon.Information,
+            3000,
+        )
+
+    # ========================================================
+    # Minimize
+    # ========================================================
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+
+        if event.type() != QEvent.Type.WindowStateChange:
+            return
+
+        if not self.isMinimized():
+            return
+
+        if not self.minimize_to_tray.isChecked():
+            return
+
+        # Даём Windows сначала обработать минимизацию,
+        # потом скрываем окно из панели задач.
+        self.hide()
+
+        self.show_tray_notification()
+
+    # ========================================================
+    # Close
+    # ========================================================
+
+    def closeEvent(self, event):
         self.save_current_settings()
 
+        # Галка включена:
+        # X = спрятать в трей, но НЕ закрывать приложение.
         if (
             self.minimize_to_tray.isChecked()
             and not self.force_quit
         ):
             event.ignore()
+
             self.hide()
 
-            if not self.tray_notice_shown:
-                self.tray.showMessage(
-                    "Dota2voice2text",
-                    "Программа продолжает работать в фоне.",
-                    QSystemTrayIcon.MessageIcon.Information,
-                    2500,
-                )
-
-                self.tray_notice_shown = True
+            self.show_tray_notification()
 
             return
 
+        # Галка выключена:
+        # X = полный выход.
         if self.controller:
             self.controller.stop()
+            self.controller = None
+
+        self.tray.hide()
 
         event.accept()
+
+        QApplication.instance().quit()
 
     def quit_application(self):
         self.force_quit = True
@@ -793,7 +828,6 @@ class MainWindow(QMainWindow):
 
         if self.controller:
             self.controller.stop()
-
             self.controller = None
 
         self.tray.hide()
