@@ -1,14 +1,21 @@
-﻿from pynput import keyboard, mouse
+﻿import threading
+
+from pynput import keyboard, mouse
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
     QLabel,
     QMainWindow,
+    QMenu,
     QPushButton,
+    QStyle,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -35,25 +42,28 @@ class MainWindow(QMainWindow):
         str,
     )
 
+    controller_ready = Signal(object)
+    controller_error = Signal(str)
+
     def __init__(self):
         super().__init__()
 
         self.controller = None
+        self.loading = False
+        self.force_quit = False
+        self.tray_notice_shown = False
 
-        self.settings = (
-            load_settings()
-        )
+        self.settings = load_settings()
 
-        self.team_bind = (
-            self.settings["team_bind"]
-        )
+        self.team_bind = self.settings[
+            "team_bind"
+        ]
 
-        self.all_bind = (
-            self.settings["all_bind"]
-        )
+        self.all_bind = self.settings[
+            "all_bind"
+        ]
 
         self.capture_target = None
-
         self.capture_mouse = None
         self.capture_keyboard = None
 
@@ -62,8 +72,8 @@ class MainWindow(QMainWindow):
         )
 
         self.resize(
-            520,
-            430,
+            540,
+            470,
         )
 
         self.status_signal.connect(
@@ -78,8 +88,17 @@ class MainWindow(QMainWindow):
             self._finish_bind_capture
         )
 
+        self.controller_ready.connect(
+            self._controller_loaded
+        )
+
+        self.controller_error.connect(
+            self._controller_load_failed
+        )
+
         self.build_ui()
         self.load_devices()
+        self.setup_tray()
 
     # ========================================================
     # UI
@@ -87,7 +106,6 @@ class MainWindow(QMainWindow):
 
     def build_ui(self):
         root = QWidget()
-
         layout = QVBoxLayout(root)
 
         title = QLabel(
@@ -95,7 +113,7 @@ class MainWindow(QMainWindow):
         )
 
         title.setStyleSheet(
-            "font-size: 24px;"
+            "font-size: 25px;"
             "font-weight: 700;"
         )
 
@@ -157,15 +175,34 @@ class MainWindow(QMainWindow):
 
         self.auto_send.setChecked(
             bool(
-                self.settings[
-                    "auto_send"
-                ]
+                self.settings.get(
+                    "auto_send",
+                    False,
+                )
             )
         )
 
         form.addRow(
             "",
             self.auto_send,
+        )
+
+        self.minimize_to_tray = QCheckBox(
+            "Сворачивать в системный трей"
+        )
+
+        self.minimize_to_tray.setChecked(
+            bool(
+                self.settings.get(
+                    "minimize_to_tray",
+                    True,
+                )
+            )
+        )
+
+        form.addRow(
+            "",
+            self.minimize_to_tray,
         )
 
         settings_box.setLayout(form)
@@ -192,6 +229,10 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel(
             "Статус: Остановлено"
+        )
+
+        self.status_label.setStyleSheet(
+            "font-size: 14px;"
         )
 
         layout.addWidget(
@@ -227,6 +268,91 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         self.setCentralWidget(root)
+
+    # ========================================================
+    # Tray
+    # ========================================================
+
+    def setup_tray(self):
+        icon = self.style().standardIcon(
+            QStyle.StandardPixmap.SP_ComputerIcon
+        )
+
+        self.tray = QSystemTrayIcon(
+            icon,
+            self,
+        )
+
+        self.tray.setToolTip(
+            "Dota2voice2text"
+        )
+
+        menu = QMenu()
+
+        show_action = QAction(
+            "Открыть",
+            self,
+        )
+
+        show_action.triggered.connect(
+            self.show_from_tray
+        )
+
+        menu.addAction(
+            show_action
+        )
+
+        self.tray_toggle_action = QAction(
+            "Запустить",
+            self,
+        )
+
+        self.tray_toggle_action.triggered.connect(
+            self.toggle
+        )
+
+        menu.addAction(
+            self.tray_toggle_action
+        )
+
+        menu.addSeparator()
+
+        quit_action = QAction(
+            "Выход",
+            self,
+        )
+
+        quit_action.triggered.connect(
+            self.quit_application
+        )
+
+        menu.addAction(
+            quit_action
+        )
+
+        self.tray.setContextMenu(
+            menu
+        )
+
+        self.tray.activated.connect(
+            self.tray_activated
+        )
+
+        self.tray.show()
+
+    def tray_activated(
+        self,
+        reason,
+    ):
+        if reason == (
+            QSystemTrayIcon.ActivationReason.DoubleClick
+        ):
+            self.show_from_tray()
+
+    def show_from_tray(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     # ========================================================
     # Devices
@@ -285,7 +411,10 @@ class MainWindow(QMainWindow):
         self,
         target,
     ):
-        if self.controller is not None:
+        if (
+            self.controller is not None
+            or self.loading
+        ):
             return
 
         self.capture_target = target
@@ -394,6 +523,9 @@ class MainWindow(QMainWindow):
     # ========================================================
 
     def toggle(self):
+        if self.loading:
+            return
+
         if self.controller is None:
             self.start_controller()
         else:
@@ -407,6 +539,7 @@ class MainWindow(QMainWindow):
             self.set_status(
                 "Бинды не могут совпадать"
             )
+
             return
 
         device = (
@@ -417,54 +550,113 @@ class MainWindow(QMainWindow):
             self.set_status(
                 "Микрофон не выбран"
             )
+
             return
 
         self.save_current_settings()
+
+        self.loading = True
+
+        self.set_controls_enabled(
+            False
+        )
+
+        self.start_button.setEnabled(
+            False
+        )
+
+        self.start_button.setText(
+            "Загрузка моделей..."
+        )
 
         self.set_status(
             "Загрузка моделей..."
         )
 
+        threading.Thread(
+            target=self._load_controller_worker,
+            args=(device,),
+            daemon=True,
+        ).start()
+
+    def _load_controller_worker(
+        self,
+        device,
+    ):
         try:
-            self.controller = (
-                VoiceController(
-                    device_index=
-                        device["index"],
+            controller = VoiceController(
+                device_index=
+                    device["index"],
 
-                    team_bind=
-                        self.team_bind,
+                team_bind=
+                    self.team_bind,
 
-                    all_bind=
-                        self.all_bind,
+                all_bind=
+                    self.all_bind,
 
-                    auto_send=
-                        self.auto_send
-                        .isChecked(),
+                auto_send=
+                    self.auto_send
+                    .isChecked(),
 
-                    on_status=
-                        self.status_signal.emit,
+                on_status=
+                    self.status_signal.emit,
 
-                    on_text=
-                        self.text_signal.emit,
-                )
+                on_text=
+                    self.text_signal.emit,
             )
 
-            self.controller.start()
-
-            self.set_controls_enabled(
-                False
-            )
-
-            self.start_button.setText(
-                "Остановить"
+            self.controller_ready.emit(
+                controller
             )
 
         except Exception as exc:
-            self.controller = None
-
-            self.set_status(
-                f"Ошибка: {exc}"
+            self.controller_error.emit(
+                str(exc)
             )
+
+    def _controller_loaded(
+        self,
+        controller,
+    ):
+        self.loading = False
+        self.controller = controller
+
+        self.controller.start()
+
+        self.start_button.setEnabled(
+            True
+        )
+
+        self.start_button.setText(
+            "Остановить"
+        )
+
+        self.tray_toggle_action.setText(
+            "Остановить"
+        )
+
+    def _controller_load_failed(
+        self,
+        error,
+    ):
+        self.loading = False
+        self.controller = None
+
+        self.set_controls_enabled(
+            True
+        )
+
+        self.start_button.setEnabled(
+            True
+        )
+
+        self.start_button.setText(
+            "Запустить"
+        )
+
+        self.set_status(
+            f"Ошибка: {error}"
+        )
 
     def stop_controller(self):
         if self.controller:
@@ -477,6 +669,10 @@ class MainWindow(QMainWindow):
         )
 
         self.start_button.setText(
+            "Запустить"
+        )
+
+        self.tray_toggle_action.setText(
             "Запустить"
         )
 
@@ -529,6 +725,10 @@ class MainWindow(QMainWindow):
                 "auto_send":
                     self.auto_send
                     .isChecked(),
+
+                "minimize_to_tray":
+                    self.minimize_to_tray
+                    .isChecked(),
             }
         )
 
@@ -552,13 +752,50 @@ class MainWindow(QMainWindow):
             text
         )
 
+    # ========================================================
+    # Close / Quit
+    # ========================================================
+
     def closeEvent(
         self,
         event,
     ):
         self.save_current_settings()
 
+        if (
+            self.minimize_to_tray.isChecked()
+            and not self.force_quit
+        ):
+            event.ignore()
+            self.hide()
+
+            if not self.tray_notice_shown:
+                self.tray.showMessage(
+                    "Dota2voice2text",
+                    "Программа продолжает работать в фоне.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    2500,
+                )
+
+                self.tray_notice_shown = True
+
+            return
+
         if self.controller:
             self.controller.stop()
 
         event.accept()
+
+    def quit_application(self):
+        self.force_quit = True
+
+        self.save_current_settings()
+
+        if self.controller:
+            self.controller.stop()
+
+            self.controller = None
+
+        self.tray.hide()
+
+        QApplication.instance().quit()

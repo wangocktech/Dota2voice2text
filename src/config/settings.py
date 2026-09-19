@@ -15,6 +15,7 @@ DEFAULT_SETTINGS = {
     "team_bind": "mouse:x2",
     "all_bind": "mouse:x1",
     "auto_send": False,
+    "minimize_to_tray": True,
 }
 
 

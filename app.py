@@ -12,6 +12,9 @@ def main():
         "Dota2voice2text"
     )
 
+    # Нужно для работы системного трея.
+    app.setQuitOnLastWindowClosed(False)
+
     window = MainWindow()
     window.show()
 
