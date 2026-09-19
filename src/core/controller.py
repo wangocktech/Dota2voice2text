@@ -3,9 +3,9 @@ from time import perf_counter
 
 import numpy as np
 import sounddevice as sd
-from pynput import mouse
 
 from src.input.dota_sender import DotaChatSender
+from src.input.hotkeys import GlobalPTTListener
 from src.speech.gigaam_engine import GigaAMEngine
 from src.text.postprocessor import TextPostProcessor
 
@@ -14,11 +14,16 @@ class VoiceController:
     def __init__(
         self,
         device_index: int,
+        team_bind: str = "mouse:x2",
+        all_bind: str = "mouse:x1",
         auto_send: bool = False,
         on_status=None,
         on_text=None,
     ):
         self.device_index = device_index
+
+        self.team_bind = team_bind
+        self.all_bind = all_bind
 
         self.on_status = (
             on_status
@@ -30,8 +35,7 @@ class VoiceController:
             or (lambda text: None)
         )
 
-        # Загружаются ОДИН РАЗ
-        # при запуске программы
+        # Модели загружаются один раз.
         self.on_status(
             "Загрузка GigaAM..."
         )
@@ -46,10 +50,8 @@ class VoiceController:
             TextPostProcessor()
         )
 
-        self.sender = (
-            DotaChatSender(
-                auto_send=auto_send
-            )
+        self.sender = DotaChatSender(
+            auto_send=auto_send
         )
 
         device = sd.query_devices(
@@ -62,6 +64,7 @@ class VoiceController:
         )
 
         self.frames = []
+
         self.stream = None
 
         self.recording = False
@@ -70,32 +73,26 @@ class VoiceController:
         self.chat_type = None
 
         self.lock = threading.Lock()
-        self.listener = None
+
+        self.hotkeys = GlobalPTTListener(
+            self._on_hotkey
+        )
 
         self.release_time = None
 
     # ========================================================
-    # Start / Stop controller
+    # Controller
     # ========================================================
 
     def start(self):
-        if self.listener is not None:
-            return
-
-        self.listener = mouse.Listener(
-            on_click=self._on_click
-        )
-
-        self.listener.start()
+        self.hotkeys.start()
 
         self.on_status(
             "Готов"
         )
 
     def stop(self):
-        if self.listener is not None:
-            self.listener.stop()
-            self.listener = None
+        self.hotkeys.stop()
 
         if self.stream is not None:
             try:
@@ -116,16 +113,13 @@ class VoiceController:
     # Hotkeys
     # ========================================================
 
-    def _on_click(
+    def _on_hotkey(
         self,
-        x,
-        y,
-        button,
-        pressed,
+        bind: str,
+        pressed: bool,
     ):
         try:
-            # MOUSE5
-            if button == mouse.Button.x2:
+            if bind == self.team_bind:
                 if pressed:
                     self._start_recording(
                         "team"
@@ -133,8 +127,9 @@ class VoiceController:
                 else:
                     self._stop_recording()
 
-            # MOUSE4
-            elif button == mouse.Button.x1:
+                return
+
+            if bind == self.all_bind:
                 if pressed:
                     self._start_recording(
                         "all"
@@ -143,6 +138,10 @@ class VoiceController:
                     self._stop_recording()
 
         except Exception as exc:
+            print(
+                f"❌ HOTKEY: {exc}"
+            )
+
             self.on_status(
                 f"Ошибка: {exc}"
             )
@@ -264,22 +263,18 @@ class VoiceController:
         ).start()
 
     # ========================================================
-    # Recognition pipeline
+    # Pipeline
     # ========================================================
 
     def _process(
         self,
-        audio: np.ndarray,
-        chat_type: str,
+        audio,
+        chat_type,
     ):
         try:
             self.on_status(
                 "Распознаю..."
             )
-
-            # ----------------------------------------
-            # GigaAM
-            # ----------------------------------------
 
             raw_text, asr_time = (
                 self.speech.transcribe(
@@ -304,10 +299,6 @@ class VoiceController:
                 )
                 return
 
-            # ----------------------------------------
-            # Dota dictionary + punctuation
-            # ----------------------------------------
-
             final_text, post_time = (
                 self.postprocessor.process(
                     raw_text
@@ -320,17 +311,13 @@ class VoiceController:
             )
 
             print(
-                f"⚡ Post: "
+                f"⚡ POST: "
                 f"{post_time:.3f} сек."
             )
 
             self.on_text(
                 final_text
             )
-
-            # ----------------------------------------
-            # Dota
-            # ----------------------------------------
 
             self.on_status(
                 "Вставляю текст..."
@@ -349,14 +336,13 @@ class VoiceController:
             )
 
             print(
-                f"🚀 ВСЕГО после отпускания: "
+                f"🚀 ВСЕГО: "
                 f"{total_time:.3f} сек."
             )
 
             if total_time > 5:
                 print(
-                    "⚠ Превышен лимит "
-                    "задержки 5 секунд!"
+                    "⚠ Превышено 5 секунд!"
                 )
 
             if inserted:
