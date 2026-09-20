@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Compile Python sources
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Recurse -File -Include *.py |
+            Where-Object {
+              $_.FullName -notmatch '\\.venv' -and
+              $_.FullName -notmatch '\\build\\' -and
+              $_.FullName -notmatch '\\dist\\'
+            }
+
+          foreach ($file in $files) {
+            python -m py_compile $file.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "py_compile failed: $($file.FullName)"
+            }
+          }
+
+      - name: Validate JSON data files
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+
+          files = list(Path("data").rglob("*.json"))
+          if not files:
+              raise SystemExit("No JSON files found in data/")
+
+          for path in files:
+              with path.open("r", encoding="utf-8-sig") as f:
+                  json.load(f)
+              print("OK:", path)
+          '@ | python -
+
+      - name: Check required project files
+        shell: pwsh
+        run: |
+          $required = @(
+            "app.py",
+            "requirements.txt",
+            "src\version.py",
+            "src\core\controller.py",
+            "src\speech\gigaam_engine.py",
+            "src\text\postprocessor.py",
+            "src\text\translator.py",
+            "src\text\translation_model_manager.py",
+            "data\translation_model_manifest.json",
+            "BUILD_WITH_TRANSLATION.ps1",
+            "Dota2voice2text.iss"
+          )
+
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Required file missing: $path"
+            }
+          }

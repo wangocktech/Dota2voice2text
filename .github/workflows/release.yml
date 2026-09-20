@@ -1,0 +1,305 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      PYTHONUTF8: "1"
+      GIGAAM_NAME: sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19
+      GIGAAM_URL: https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19.tar.bz2
+      RUPUNCT_REPO: ekhodzitsky/rupunct-small-onnx
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+            throw "Tag must look like v0.2.2. Got: $tag"
+          }
+
+          $version = $Matches[1]
+
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Release version: $version"
+
+      - name: Set source version from tag
+        shell: pwsh
+        run: |
+          $path = "src\version.py"
+          $content = Get-Content $path -Raw
+
+          $content = [regex]::Replace(
+            $content,
+            'APP_VERSION\s*=\s*["''][^"'']+["'']',
+            "APP_VERSION = `"$env:APP_VERSION`"",
+            1
+          )
+
+          Set-Content $path $content -Encoding UTF8
+          Get-Content $path
+
+      - name: Set installer version from tag
+        shell: pwsh
+        run: |
+          $path = "Dota2voice2text.iss"
+          $content = Get-Content $path -Raw
+
+          $content = [regex]::Replace(
+            $content,
+            '#define MyAppVersion "[^"]+"',
+            "#define MyAppVersion `"$env:APP_VERSION`"",
+            1
+          )
+
+          Set-Content $path $content -Encoding UTF8
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Create release virtual environment
+        shell: pwsh
+        run: |
+          python -m venv .venv313
+          & ".\.venv313\Scripts\python.exe" -m pip install --upgrade pip
+          & ".\.venv313\Scripts\pip.exe" install -r requirements.txt
+          & ".\.venv313\Scripts\pip.exe" install huggingface_hub
+
+      - name: Restore model cache
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: dota2voice2text-models-v1-gigaam-2025-04-19-rupunct-small
+
+      - name: Download GigaAM model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force models | Out-Null
+
+          $archive = Join-Path $env:RUNNER_TEMP "$env:GIGAAM_NAME.tar.bz2"
+
+          Invoke-WebRequest `
+            -Uri $env:GIGAAM_URL `
+            -OutFile $archive
+
+          tar -xjf $archive -C models
+
+          $model = "models\$env:GIGAAM_NAME\model.int8.onnx"
+          $tokens = "models\$env:GIGAAM_NAME\tokens.txt"
+
+          if (-not (Test-Path $model)) {
+            throw "GigaAM model was not extracted."
+          }
+
+          if (-not (Test-Path $tokens)) {
+            throw "GigaAM tokens.txt was not extracted."
+          }
+
+      - name: Download RUPunct model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          & ".\.venv313\Scripts\python.exe" -c @'
+          from huggingface_hub import snapshot_download
+
+          snapshot_download(
+              repo_id="ekhodzitsky/rupunct-small-onnx",
+              local_dir=r"models\rupunct-small-onnx",
+          )
+          '@
+
+      - name: Verify model files
+        shell: pwsh
+        run: |
+          $required = @(
+            "models\$env:GIGAAM_NAME\model.int8.onnx",
+            "models\$env:GIGAAM_NAME\tokens.txt",
+            "models\rupunct-small-onnx\rupunct_small_int8.onnx",
+            "models\rupunct-small-onnx\tokenizer.json",
+            "models\rupunct-small-onnx\config.json"
+          )
+
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Model file missing: $path"
+            }
+          }
+
+      - name: Validate translation model manifest
+        shell: pwsh
+        run: |
+          $manifest = Get-Content "data\translation_model_manifest.json" -Raw | ConvertFrom-Json
+
+          if (-not $manifest.url) {
+            throw "translation_model_manifest.json: url is empty."
+          }
+
+          if (-not $manifest.sha256 -or $manifest.sha256 -eq ("0" * 64)) {
+            throw "translation_model_manifest.json: sha256 is not configured."
+          }
+
+      - name: Build portable app
+        shell: pwsh
+        run: |
+          .\BUILD_WITH_TRANSLATION.ps1
+
+          if (-not (Test-Path ".\dist\Dota2voice2text\Dota2voice2text.exe")) {
+            throw "Portable build failed."
+          }
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          $zip = "Dota2voice2text-v$env:APP_VERSION-windows-x64.zip"
+
+          Compress-Archive `
+            -Path ".\dist\Dota2voice2text\*" `
+            -DestinationPath $zip `
+            -CompressionLevel Optimal `
+            -Force
+
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Set-Content "$zip.sha256" -Encoding ASCII
+
+          $size = (Get-Item $zip).Length / 1MB
+          Write-Host ("Portable ZIP: {0:N1} MB" -f $size)
+          Write-Host "SHA256: $hash"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+
+      - name: Prepare installer payload
+        shell: pwsh
+        run: |
+          Remove-Item ".\installer" -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force ".\installer\payload" | Out-Null
+
+          Copy-Item `
+            ".\dist\Dota2voice2text\*" `
+            ".\installer\payload" `
+            -Recurse `
+            -Force
+
+          Copy-Item `
+            ".\Dota2voice2text.iss" `
+            ".\installer\Dota2voice2text.iss" `
+            -Force
+
+      - name: Build Setup.exe
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+
+          $iscc = $candidates |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+
+          if (-not $iscc) {
+            $iscc = Get-ChildItem `
+              "${env:ProgramFiles(x86)}", `
+              "$env:ProgramFiles", `
+              "$env:LOCALAPPDATA\Programs" `
+              -Filter ISCC.exe `
+              -Recurse `
+              -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+
+          if (-not $iscc) {
+            throw "ISCC.exe not found."
+          }
+
+          Push-Location ".\installer"
+          try {
+            & $iscc ".\Dota2voice2text.iss"
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Inno Setup build failed."
+            }
+          }
+          finally {
+            Pop-Location
+          }
+
+          $setup = ".\installer\output\Dota2voice2text-v$env:APP_VERSION-Setup.exe"
+
+          if (-not (Test-Path $setup)) {
+            throw "Setup.exe not found: $setup"
+          }
+
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$hash  Dota2voice2text-v$env:APP_VERSION-Setup.exe" |
+            Set-Content "$setup.sha256" -Encoding ASCII
+
+          $size = (Get-Item $setup).Length / 1MB
+          Write-Host ("Setup: {0:N1} MB" -f $size)
+          Write-Host "SHA256: $hash"
+
+      - name: Smoke-check release assets
+        shell: pwsh
+        run: |
+          $assets = @(
+            "Dota2voice2text-v$env:APP_VERSION-windows-x64.zip",
+            "Dota2voice2text-v$env:APP_VERSION-windows-x64.zip.sha256",
+            "installer\output\Dota2voice2text-v$env:APP_VERSION-Setup.exe",
+            "installer\output\Dota2voice2text-v$env:APP_VERSION-Setup.exe.sha256"
+          )
+
+          foreach ($asset in $assets) {
+            if (-not (Test-Path $asset)) {
+              throw "Release asset missing: $asset"
+            }
+          }
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "Dota2voice2text-v$env:APP_VERSION-windows-x64.zip"
+          $zipHash = "$zip.sha256"
+          $setup = "installer\output\Dota2voice2text-v$env:APP_VERSION-Setup.exe"
+          $setupHash = "$setup.sha256"
+
+          gh release create `
+            "$env:APP_TAG" `
+            "$zip" `
+            "$zipHash" `
+            "$setup" `
+            "$setupHash" `
+            --title "Dota2voice2text $env:APP_TAG" `
+            --generate-notes
