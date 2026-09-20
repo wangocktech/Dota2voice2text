@@ -55,3 +55,12 @@ translation_source.zip
 v020_current_source.zip
 v020_final_source.zip
 Dota2voice2text_final_dist.zip
+INSTALL_*.ps1
+*_FIX.ps1
+*_FIXED.ps1
+PREPARE_AND_PUBLISH_*.ps1
+CLEAN_REPO_*.ps1
+NEXT_STEPS.txt
+_*source*/
+installer/
+*.pyc

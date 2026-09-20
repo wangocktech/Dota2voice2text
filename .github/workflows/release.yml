@@ -1,4 +1,4 @@
-name: Windows Release
+﻿name: Windows Release
 
 on:
   push:
@@ -64,7 +64,7 @@ jobs:
       - name: Set installer version from tag
         shell: pwsh
         run: |
-          $path = "Dota2voice2text.iss"
+          $path = "packaging\Dota2voice2text.iss"
           $content = Get-Content $path -Raw
 
           $content = [regex]::Replace(
@@ -169,7 +169,7 @@ jobs:
       - name: Build portable app
         shell: pwsh
         run: |
-          .\BUILD_WITH_TRANSLATION.ps1
+          .\scripts\build_windows.ps1
 
           if (-not (Test-Path ".\dist\Dota2voice2text\Dota2voice2text.exe")) {
             throw "Portable build failed."
@@ -211,7 +211,7 @@ jobs:
             -Force
 
           Copy-Item `
-            ".\Dota2voice2text.iss" `
+            ".\packaging\Dota2voice2text.iss" `
             ".\installer\Dota2voice2text.iss" `
             -Force
 
@@ -245,7 +245,7 @@ jobs:
 
           Push-Location ".\installer"
           try {
-            & $iscc ".\Dota2voice2text.iss"
+            & $iscc ".\packaging\Dota2voice2text.iss"
 
             if ($LASTEXITCODE -ne 0) {
               throw "Inno Setup build failed."
@@ -303,3 +303,6 @@ jobs:
             "$setupHash" `
             --title "Dota2voice2text $env:APP_TAG" `
             --generate-notes
+
+
+

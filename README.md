@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # 🎙️ Dota2voice2text
 
@@ -287,9 +287,9 @@ Dota2voice2text/
 │   ├── update/
 │   └── utils/
 ├── tools/
-├── BUILD_WITH_TRANSLATION.ps1
+├── scripts/build_windows.ps1
 ├── PUBLISH_APP_RELEASE.ps1
-├── PUBLISH_TRANSLATION_MODEL.ps1
+├── scripts/publish_translation_model.ps1
 ├── requirements.txt
 ├── LICENSE
 └── README.md
@@ -330,7 +330,7 @@ python app.py
 После подготовки локальных моделей:
 
 ```powershell
-.\BUILD_WITH_TRANSLATION.ps1
+.\scripts\build_windows.ps1
 ```
 
 Результат:
@@ -408,3 +408,5 @@ dist\Dota2voice2text\Dota2voice2text.exe
 [License](LICENSE)
 
 </div>
+
+
