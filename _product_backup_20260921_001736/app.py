@@ -1,10 +1,8 @@
-import logging
-import sys
+﻿import sys
 
 from PySide6.QtWidgets import QApplication
 
 from src.gui.main_window import MainWindow
-from src.utils.logging_setup import setup_logging
 from src.version import (
     APP_NAME,
     APP_VERSION,
@@ -12,12 +10,6 @@ from src.version import (
 
 
 def main():
-    setup_logging()
-
-    logging.info(
-        "Запуск Dota2voice2text"
-    )
-
     app = QApplication(sys.argv)
 
     app.setApplicationName(

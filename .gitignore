@@ -49,3 +49,7 @@ dist/
 
 # Release archives
 Dota2voice2text-v*.zip
+
+.release/
+
+models/opus-mt-ru-en-ct2-int8/

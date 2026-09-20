@@ -9,9 +9,6 @@ from src.input.hotkeys import GlobalPTTListener
 from src.speech.gigaam_engine import GigaAMEngine
 from src.text.postprocessor import TextPostProcessor
 from src.text.translator import EnglishTranslator
-from src.text.translation_model_manager import (
-    is_translation_model_installed,
-)
 
 
 class VoiceController:
@@ -33,14 +30,6 @@ class VoiceController:
         self.on_status = on_status or (lambda text: None)
         self.on_text = on_text or (lambda text: None)
         self.on_timing = on_timing or (lambda value: None)
-
-        if (
-            translate_to_english
-            and not is_translation_model_installed()
-        ):
-            raise RuntimeError(
-                "Модель перевода не установлена."
-            )
 
         # Models are loaded once when the controller starts.
         self.on_status("Загрузка GigaAM...")

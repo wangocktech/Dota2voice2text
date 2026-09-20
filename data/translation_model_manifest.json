@@ -1,0 +1,10 @@
+﻿{
+    "version":  "1",
+    "name":  "Dota2voice2text RU-EN Translation Model",
+    "archive_name":  "Dota2voice2text-translation-model-v1.zip",
+    "url":  "https://github.com/wangocktech/Dota2voice2text/releases/download/translation-model-v1/Dota2voice2text-translation-model-v1.zip",
+    "sha256":  "4bbb951cd2ac8956d276cd7c029224d114b400c27df4e5813572a1cd19efc101",
+    "size_bytes":  67526569,
+    "license":  "CC-BY-4.0",
+    "source_model":  "Helsinki-NLP/opus-mt-ru-en"
+}

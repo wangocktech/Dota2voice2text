@@ -1,17 +1,14 @@
-import threading
+﻿import threading
 from time import perf_counter
 
 import numpy as np
 import sounddevice as sd
 
+from src.text.translator import EnglishTranslator
 from src.input.dota_sender import DotaChatSender
 from src.input.hotkeys import GlobalPTTListener
 from src.speech.gigaam_engine import GigaAMEngine
 from src.text.postprocessor import TextPostProcessor
-from src.text.translator import EnglishTranslator
-from src.text.translation_model_manager import (
-    is_translation_model_installed,
-)
 
 
 class VoiceController:
@@ -27,34 +24,49 @@ class VoiceController:
         on_timing=None,
     ):
         self.device_index = device_index
+
         self.team_bind = team_bind
         self.all_bind = all_bind
 
-        self.on_status = on_status or (lambda text: None)
-        self.on_text = on_text or (lambda text: None)
-        self.on_timing = on_timing or (lambda value: None)
+        self.on_status = (
+            on_status
+            or (lambda text: None)
+        )
 
-        if (
-            translate_to_english
-            and not is_translation_model_installed()
-        ):
-            raise RuntimeError(
-                "Модель перевода не установлена."
-            )
+        self.on_text = (
+            on_text
+            or (lambda text: None)
+        )
 
-        # Models are loaded once when the controller starts.
-        self.on_status("Загрузка GigaAM...")
+        self.on_timing = (
+            on_timing
+            or (lambda value: None)
+        )
+
+        # Модели загружаются один раз.
+        self.on_status(
+            "Загрузка GigaAM..."
+        )
+
         self.speech = GigaAMEngine()
 
-        self.on_status("Загрузка корректора...")
-        self.postprocessor = TextPostProcessor()
+        self.on_status(
+            "Загрузка корректора..."
+        )
+
+        self.postprocessor = (
+            TextPostProcessor()
+        )
 
         self.translate_to_english = translate_to_english
         self.translator = None
 
         if self.translate_to_english:
-            self.on_status("Загрузка переводчика...")
-            self.translator = EnglishTranslator()
+            self.on_status(
+                "Загрузка переводчика..."
+            )
+
+    self.translator = EnglishTranslator()
 
         self.sender = DotaChatSender(
             auto_send=auto_send
@@ -70,10 +82,12 @@ class VoiceController:
         )
 
         self.frames = []
+
         self.stream = None
 
         self.recording = False
         self.processing = False
+
         self.chat_type = None
 
         self.lock = threading.Lock()
@@ -90,7 +104,10 @@ class VoiceController:
 
     def start(self):
         self.hotkeys.start()
-        self.on_status("Готов")
+
+        self.on_status(
+            "Готов"
+        )
 
     def stop(self):
         self.hotkeys.stop()
@@ -105,7 +122,10 @@ class VoiceController:
             self.stream = None
 
         self.recording = False
-        self.on_status("Остановлено")
+
+        self.on_status(
+            "Остановлено"
+        )
 
     # ========================================================
     # Hotkeys
@@ -119,20 +139,30 @@ class VoiceController:
         try:
             if bind == self.team_bind:
                 if pressed:
-                    self._start_recording("team")
+                    self._start_recording(
+                        "team"
+                    )
                 else:
                     self._stop_recording()
+
                 return
 
             if bind == self.all_bind:
                 if pressed:
-                    self._start_recording("all")
+                    self._start_recording(
+                        "all"
+                    )
                 else:
                     self._stop_recording()
 
         except Exception as exc:
-            print(f"❌ HOTKEY: {exc}")
-            self.on_status(f"Ошибка: {exc}")
+            print(
+                f"❌ HOTKEY: {exc}"
+            )
+
+            self.on_status(
+                f"Ошибка: {exc}"
+            )
 
     # ========================================================
     # Audio
@@ -146,7 +176,9 @@ class VoiceController:
         status,
     ):
         if status:
-            print(f"[AUDIO] {status}")
+            print(
+                f"[AUDIO] {status}"
+            )
 
         with self.lock:
             if self.recording:
@@ -160,7 +192,10 @@ class VoiceController:
         self,
         chat_type: str,
     ):
-        if self.recording or self.processing:
+        if (
+            self.recording
+            or self.processing
+        ):
             return
 
         self.chat_type = chat_type
@@ -192,7 +227,9 @@ class VoiceController:
         if not self.recording:
             return
 
-        self.release_time = perf_counter()
+        self.release_time = (
+            perf_counter()
+        )
 
         with self.lock:
             self.recording = False
@@ -203,11 +240,16 @@ class VoiceController:
             self.stream = None
 
         with self.lock:
-            frames = self.frames.copy()
+            frames = (
+                self.frames.copy()
+            )
+
             self.frames = []
 
         if not frames:
-            self.on_status("Аудио не записано")
+            self.on_status(
+                "Аудио не записано"
+            )
             return
 
         audio = np.concatenate(
@@ -226,6 +268,7 @@ class VoiceController:
             return
 
         chat_type = self.chat_type
+
         self.processing = True
 
         threading.Thread(
@@ -247,7 +290,9 @@ class VoiceController:
         chat_type,
     ):
         try:
-            self.on_status("Распознаю...")
+            self.on_status(
+                "Распознаю..."
+            )
 
             raw_text, asr_time = (
                 self.speech.transcribe(
@@ -257,7 +302,10 @@ class VoiceController:
             )
 
             print()
-            print(f"🎙 RAW: {raw_text}")
+            print(
+                f"🎙 RAW: {raw_text}"
+            )
+
             print(
                 f"⚡ GigaAM: "
                 f"{asr_time:.3f} сек."
@@ -275,45 +323,43 @@ class VoiceController:
                 )
             )
 
-            print(
-                f"✨ RU: {final_text}"
+            translation_time = 0.0
+
+            if self.translator is not None:
+                self.on_status(
+            "Перевожу на английский..."
+        )
+
+        translated_text, translation_time = (
+            self.translator.translate(
+                final_text
             )
+     )
+
+    print(
+        f"🌐 EN: {translated_text}"
+    )
+
+    print(
+        f"⚡ Translation: "
+        f"{translation_time:.3f} сек."
+    )
+
+    final_text = translated_text
+
+            print(
+                f"✨ FINAL: "
+                f"{final_text}"
+            )
+
             print(
                 f"⚡ POST: "
                 f"{post_time:.3f} сек."
             )
 
-            translation_time = 0.0
-
-            if self.translator is not None:
-                self.on_status(
-                    "Перевожу на английский..."
-                )
-
-                (
-                    translated_text,
-                    translation_time,
-                ) = self.translator.translate(
-                    final_text
-                )
-
-                print(
-                    f"🌐 EN: "
-                    f"{translated_text}"
-                )
-                print(
-                    f"⚡ Translation: "
-                    f"{translation_time:.3f} сек."
-                )
-
-                final_text = translated_text
-
-            print(
-                f"✅ FINAL: "
-                f"{final_text}"
+            self.on_text(
+                final_text
             )
-
-            self.on_text(final_text)
 
             self.on_status(
                 "Вставляю текст..."
@@ -336,13 +382,6 @@ class VoiceController:
                 f"{total_time:.3f} сек."
             )
 
-            if self.translator is not None:
-                print(
-                    f"   ASR {asr_time:.3f}s | "
-                    f"POST {post_time:.3f}s | "
-                    f"EN {translation_time:.3f}s"
-                )
-
             self.on_timing(total_time)
 
             if total_time > 5:
@@ -361,10 +400,14 @@ class VoiceController:
                 )
 
         except Exception as exc:
-            print(f"❌ Ошибка: {exc}")
+            print(
+                f"❌ Ошибка: {exc}"
+            )
+
             self.on_status(
                 f"Ошибка: {exc}"
             )
 
         finally:
             self.processing = False
+
