@@ -1,2 +1,0 @@
-ctranslate2==4.8.2
-sentencepiece>=0.2.0

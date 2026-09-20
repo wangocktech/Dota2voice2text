@@ -1,55 +1,57 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
-*.class
-*.pyd
+*$py.class
 
-# Virtual environment
+# Virtual environments
 .venv/
+.venv*/
 venv/
 env/
 
-# Environment variables
+# Build / packaging
+build/
+dist/
+*.spec
+.release/
+release/
+installer/output/
+
+# Models are local/runtime assets
+models/
+
+# Temporary archives and release artifacts
+*.zip
+*.7z
+*.rar
+Dota2voice2text-v*-windows-x64.zip
+
+# Local patch / backup leftovers
+PATCH_FILES/
+_*backup*/
+_*_backup_*/
+_translation_source/
+_current_source/
+_v020_source/
+
+# Logs / runtime
+*.log
+logs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets / local config
 .env
 .env.*
 
-# Build
-build/
-dist/
-*.spec
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-
-# Models / downloaded data
-models/
-
-# Audio recordings / debug
+# Runtime / development leftovers
 recordings/
-*.wav
-*.mp3
-
-# PyInstaller
-build/
-dist/
-*.spec
-
-# Release archives
-Dota2voice2text-v*.zip
-
-.release/
-
-models/opus-mt-ru-en-ct2-int8/
+*.sha256
+translation_source.zip
+v020_current_source.zip
+v020_final_source.zip
+Dota2voice2text_final_dist.zip
