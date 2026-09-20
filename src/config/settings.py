@@ -3,9 +3,15 @@ import os
 from pathlib import Path
 
 
-APP_DIR = Path(
-    os.getenv("APPDATA", Path.home())
-) / "Dota2voice2text"
+APP_DIR = (
+    Path(
+        os.getenv(
+            "APPDATA",
+            Path.home(),
+        )
+    )
+    / "Dota2voice2text"
+)
 
 CONFIG_FILE = APP_DIR / "config.json"
 
@@ -14,8 +20,14 @@ DEFAULT_SETTINGS = {
     "device_key": "",
     "team_bind": "mouse:x2",
     "all_bind": "mouse:x1",
+
     "auto_send": False,
+
     "minimize_to_tray": True,
+    "show_notifications": True,
+
+    "autostart": False,
+    "start_minimized": False,
 }
 
 

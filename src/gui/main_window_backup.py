@@ -1,8 +1,11 @@
-import threading
+﻿import threading
 
 from pynput import keyboard, mouse
 
-from PySide6.QtCore import QEvent, Signal
+from PySide6.QtCore import (
+    QEvent,
+    Signal,
+)
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -23,7 +26,10 @@ from PySide6.QtWidgets import (
 
 from src.audio.devices import get_input_devices
 from src.config.autostart import set_autostart
-from src.config.settings import load_settings, save_settings
+from src.config.settings import (
+    load_settings,
+    save_settings,
+)
 from src.core.controller import VoiceController
 from src.input.hotkeys import (
     humanize_bind,
@@ -50,7 +56,7 @@ QLabel {
 }
 
 QLabel#title {
-    font-size: 27px;
+    font-size: 26px;
     font-weight: 700;
     color: #FFFFFF;
 }
@@ -60,36 +66,51 @@ QLabel#subtitle {
     font-size: 13px;
 }
 
-QLabel#version {
+QLabel#timing {
     color: #9299A6;
-    font-size: 12px;
+    background: transparent;
+}
+
+QLabel#lastText {
+    background-color: #1D2129;
+    border: 1px solid #303641;
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 42px;
 }
 
 QGroupBox {
     background-color: #171A20;
     border: 1px solid #2A2F39;
     border-radius: 10px;
-    margin-top: 14px;
-    padding: 16px 14px 12px 14px;
+
+    margin-top: 16px;
+    padding-top: 14px;
+
     font-weight: 600;
 }
 
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
+
     left: 14px;
-    padding: 0 7px;
-    background-color: #101216;
+    padding: 0 6px;
+
     color: #FFFFFF;
+    background-color: #171A20;
 }
 
 QComboBox {
     background-color: #20242C;
     color: #FFFFFF;
+
     border: 1px solid #343B47;
     border-radius: 7px;
-    padding: 8px 36px 8px 10px;
-    min-height: 26px;
+
+    padding: 7px 10px;
+
+    min-height: 24px;
 }
 
 QComboBox:hover {
@@ -100,64 +121,52 @@ QComboBox:focus {
     border-color: #5865F2;
 }
 
-QComboBox::drop-down {
-    subcontrol-origin: padding;
-    subcontrol-position: top right;
-
-    width: 32px;
-
-    background-color: transparent;
-
-    border: none;
-    border-left: 1px solid #343B47;
-
-    border-top-right-radius: 7px;
-    border-bottom-right-radius: 7px;
-}
-
-QComboBox::down-arrow {
-    image: url("assets/icons/chevron-down.svg");
-    width: 12px;
-    height: 12px;
-}
-
 QComboBox QAbstractItemView {
     background-color: #20242C;
     color: #FFFFFF;
+
     border: 1px solid #343B47;
+
     selection-background-color: #5865F2;
     selection-color: #FFFFFF;
 }
 
 QPushButton {
-    background-color: #20242C;
+    background-color: #242932;
     color: #FFFFFF;
+
     border: 1px solid #343B47;
     border-radius: 7px;
-    padding: 8px 12px;
-    min-height: 26px;
+
+    padding: 7px 12px;
+
+    min-height: 24px;
 }
 
 QPushButton:hover {
-    background-color: #292E38;
+    background-color: #2C323D;
     border-color: #5865F2;
 }
 
 QPushButton:pressed {
-    background-color: #1B1F26;
+    background-color: #20242C;
 }
 
 QPushButton:disabled {
     background-color: #191C22;
-    color: #707681;
-    border-color: #252A32;
+    color: #656B75;
+    border-color: #252932;
 }
 
 QPushButton#startButton {
     background-color: #5865F2;
+    color: white;
+
     border: none;
-    border-radius: 9px;
-    min-height: 36px;
+    border-radius: 8px;
+
+    padding: 11px;
+
     font-size: 15px;
     font-weight: 600;
 }
@@ -173,33 +182,44 @@ QPushButton#startButton:pressed {
 QCheckBox {
     background: transparent;
     color: #F2F3F5;
+
     spacing: 9px;
-    padding: 3px 0;
-    min-height: 20px;
+
+    padding-top: 3px;
+    padding-bottom: 3px;
 }
 
-QLabel#lastText {
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+}
+
+QCheckBox::indicator:unchecked {
     background-color: #20242C;
-    border: 1px solid #303641;
-    border-radius: 8px;
-    padding: 12px;
-    min-height: 38px;
+    border: 1px solid #49515F;
+    border-radius: 4px;
 }
 
-QLabel#timing {
-    color: #9299A6;
-    font-size: 13px;
+QCheckBox::indicator:unchecked:hover {
+    border-color: #5865F2;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #5865F2;
+    border: 1px solid #5865F2;
+    border-radius: 4px;
 }
 
 QMenu {
     background-color: #1B1F26;
     color: #FFFFFF;
+
     border: 1px solid #303641;
     padding: 5px;
 }
 
 QMenu::item {
-    padding: 8px 26px 8px 10px;
+    padding: 7px 24px 7px 10px;
     border-radius: 5px;
 }
 
@@ -208,18 +228,23 @@ QMenu::item:selected {
 }
 """
 
-
 class MainWindow(QMainWindow):
     status_signal = Signal(str)
     text_signal = Signal(str)
     timing_signal = Signal(float)
 
-    bind_signal = Signal(str, str)
+    bind_signal = Signal(
+        str,
+        str,
+    )
 
     controller_ready = Signal(object)
     controller_error = Signal(str)
 
-    def __init__(self, start_hidden=False):
+    def __init__(
+        self,
+        start_hidden=False,
+    ):
         super().__init__()
 
         self.controller = None
@@ -228,15 +253,23 @@ class MainWindow(QMainWindow):
 
         self.settings = load_settings()
 
-        self.team_bind = self.settings.get(
-            "team_bind",
-            "mouse:x2",
+        self.start_hidden = (
+            start_hidden
+            or bool(
+                self.settings.get(
+                    "start_minimized",
+                    False,
+                )
+            )
         )
 
-        self.all_bind = self.settings.get(
-            "all_bind",
-            "mouse:x1",
-        )
+        self.team_bind = self.settings[
+            "team_bind"
+        ]
+
+        self.all_bind = self.settings[
+            "all_bind"
+        ]
 
         self.capture_target = None
         self.capture_mouse = None
@@ -246,10 +279,19 @@ class MainWindow(QMainWindow):
             f"Dota2voice2text v{APP_VERSION}"
         )
 
-        self.resize(720, 790)
-        self.setMinimumSize(680, 720)
+        self.resize(
+            650,
+            620,
+    )
 
-        self.setStyleSheet(STYLE)
+        self.setMinimumSize(
+            620,
+            590,
+        )
+
+        self.setStyleSheet(
+            STYLE
+        )
 
         self.status_signal.connect(
             self.set_status
@@ -279,20 +321,6 @@ class MainWindow(QMainWindow):
         self.load_devices()
         self.setup_tray()
 
-        self.start_hidden = (
-            start_hidden
-            or (
-                self.settings.get(
-                    "start_minimized",
-                    False,
-                )
-                and self.settings.get(
-                    "minimize_to_tray",
-                    True,
-                )
-            )
-        )
-
     # ========================================================
     # UI
     # ========================================================
@@ -303,27 +331,24 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(root)
 
         layout.setContentsMargins(
-            24,
+            22,
             20,
-            24,
+            22,
             20,
         )
 
-        layout.setSpacing(14)
-
-        # ----------------------------------------------------
-        # Header
-        # ----------------------------------------------------
+        layout.setSpacing(12)
 
         header = QHBoxLayout()
 
-        title_layout = QVBoxLayout()
-        title_layout.setSpacing(2)
+        title_box = QVBoxLayout()
 
         title = QLabel(
             "Dota2voice2text"
         )
-        title.setObjectName("title")
+        title.setObjectName(
+            "title"
+        )
 
         subtitle = QLabel(
             "Голос → текст → Dota 2"
@@ -332,25 +357,21 @@ class MainWindow(QMainWindow):
             "subtitle"
         )
 
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+
         version = QLabel(
             f"v{APP_VERSION}"
         )
         version.setObjectName(
-            "version"
+            "subtitle"
         )
 
-        title_layout.addWidget(title)
-        title_layout.addWidget(subtitle)
-
-        header.addLayout(title_layout)
+        header.addLayout(title_box)
         header.addStretch()
         header.addWidget(version)
 
         layout.addLayout(header)
-
-        # ----------------------------------------------------
-        # Основные настройки
-        # ----------------------------------------------------
 
         settings_box = QGroupBox(
             "Основные настройки"
@@ -360,30 +381,17 @@ class MainWindow(QMainWindow):
 
         form.setHorizontalSpacing(18)
         form.setVerticalSpacing(12)
-
-        form.setContentsMargins(
-            8,
-            8,
-            8,
-            8,
-        )
+        form.setContentsMargins(8, 8, 8, 8)
 
         self.device_combo = QComboBox()
 
-        self.refresh_button = QPushButton(
-            "Обновить"
-        )
-
-        self.refresh_button.setFixedWidth(
-            100
-        )
-
-        self.refresh_button.clicked.connect(
+        refresh_button = QPushButton("Обновить")
+        refresh_button.setFixedWidth(90)
+        refresh_button.clicked.connect(
             self.load_devices
         )
 
         device_row = QHBoxLayout()
-        device_row.setSpacing(8)
 
         device_row.addWidget(
             self.device_combo,
@@ -391,7 +399,7 @@ class MainWindow(QMainWindow):
         )
 
         device_row.addWidget(
-            self.refresh_button,
+            refresh_button
         )
 
         form.addRow(
@@ -406,9 +414,8 @@ class MainWindow(QMainWindow):
         )
 
         self.team_button.clicked.connect(
-            lambda: self.capture_bind(
-                "team"
-            )
+            lambda:
+            self.capture_bind("team")
         )
 
         form.addRow(
@@ -423,9 +430,8 @@ class MainWindow(QMainWindow):
         )
 
         self.all_button.clicked.connect(
-            lambda: self.capture_bind(
-                "all"
-            )
+            lambda:
+            self.capture_bind("all")
         )
 
         form.addRow(
@@ -435,26 +441,22 @@ class MainWindow(QMainWindow):
 
         settings_box.setLayout(form)
 
-        layout.addWidget(settings_box)
-
-        # ----------------------------------------------------
-        # Поведение
-        # ----------------------------------------------------
+        layout.addWidget(
+            settings_box
+        )
 
         behavior_box = QGroupBox(
             "Поведение"
         )
 
         behavior_layout = QVBoxLayout()
-
+        behavior_layout.setSpacing(8)
         behavior_layout.setContentsMargins(
-            10,
             8,
-            10,
+            8,
+            8,
             8,
         )
-
-        behavior_layout.setSpacing(5)
 
         self.auto_send = QCheckBox(
             "Автоматически отправлять сообщение"
@@ -549,10 +551,6 @@ class MainWindow(QMainWindow):
             behavior_box
         )
 
-        # ----------------------------------------------------
-        # Start
-        # ----------------------------------------------------
-
         self.start_button = QPushButton(
             "Запустить"
         )
@@ -569,26 +567,13 @@ class MainWindow(QMainWindow):
             self.start_button
         )
 
-        # ----------------------------------------------------
-        # Status
-        # ----------------------------------------------------
-
         self.status_label = QLabel(
             "● Остановлено"
-        )
-
-        self.status_label.setStyleSheet(
-            "color: #9AA0AA;"
-            "font-weight: 600;"
         )
 
         layout.addWidget(
             self.status_label
         )
-
-        # ----------------------------------------------------
-        # Последнее сообщение
-        # ----------------------------------------------------
 
         last_box = QGroupBox(
             "Последнее сообщение"
@@ -596,14 +581,13 @@ class MainWindow(QMainWindow):
 
         last_layout = QVBoxLayout()
 
+        last_layout.setSpacing(8)
         last_layout.setContentsMargins(
             8,
             8,
             8,
             8,
         )
-
-        last_layout.setSpacing(8)
 
         self.last_text = QLabel(
             "—"
@@ -641,18 +625,135 @@ class MainWindow(QMainWindow):
             last_box
         )
 
+        layout.addStretch()
+
         self.setCentralWidget(root)
+
+    # ========================================================
+    # Tray
+    # ========================================================
+
+    def setup_tray(self):
+        icon = (
+            self.style()
+            .standardIcon(
+                QStyle.StandardPixmap
+                .SP_ComputerIcon
+            )
+        )
+
+        self.tray = QSystemTrayIcon(
+            icon,
+            self,
+        )
+
+        self.tray.setToolTip(
+            "Dota2voice2text"
+        )
+
+        menu = QMenu()
+
+        open_action = QAction(
+            "Открыть",
+            self,
+        )
+
+        open_action.triggered.connect(
+            self.show_from_tray
+        )
+
+        menu.addAction(
+            open_action
+        )
+
+        self.tray_toggle_action = QAction(
+            "Запустить",
+            self,
+        )
+
+        self.tray_toggle_action.triggered.connect(
+            self.toggle
+        )
+
+        menu.addAction(
+            self.tray_toggle_action
+        )
+
+        menu.addSeparator()
+
+        quit_action = QAction(
+            "Выход",
+            self,
+        )
+
+        quit_action.triggered.connect(
+            self.quit_application
+        )
+
+        menu.addAction(
+            quit_action
+        )
+
+        self.tray.setContextMenu(
+            menu
+        )
+
+        self.tray.activated.connect(
+            self.tray_activated
+        )
+
+        self.tray.show()
+
+    def tray_activated(
+        self,
+        reason,
+    ):
+        if reason == (
+            QSystemTrayIcon
+            .ActivationReason
+            .DoubleClick
+        ):
+            self.show_from_tray()
+
+    def show_from_tray(self):
+        self.show()
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def show_tray_notification(
+        self,
+        message,
+    ):
+        if not self.show_notifications.isChecked():
+            return
+
+        self.tray.showMessage(
+            "Dota2voice2text",
+            message,
+            QSystemTrayIcon
+            .MessageIcon
+            .Information,
+            3000,
+        )
 
     # ========================================================
     # Devices
     # ========================================================
 
     def load_devices(self):
-        old = self.device_combo.currentData()
+        current = (
+            self.device_combo.currentData()
+            if hasattr(
+                self,
+                "device_combo",
+            )
+            else None
+        )
 
-        saved_key = (
-            old.get("key")
-            if old
+        current_key = (
+            current.get("key")
+            if current
             else self.settings.get(
                 "device_key",
                 "",
@@ -692,7 +793,7 @@ class MainWindow(QMainWindow):
                 },
             )
 
-            if device_key == saved_key:
+            if device_key == current_key:
                 selected = position
 
         if selected >= 0:
@@ -704,7 +805,10 @@ class MainWindow(QMainWindow):
     # Bind capture
     # ========================================================
 
-    def capture_bind(self, target):
+    def capture_bind(
+        self,
+        target,
+    ):
         if (
             self.controller is not None
             or self.loading
@@ -745,7 +849,9 @@ class MainWindow(QMainWindow):
         if not pressed:
             return
 
-        bind = mouse_to_bind(button)
+        bind = mouse_to_bind(
+            button
+        )
 
         if bind:
             self.bind_signal.emit(
@@ -753,8 +859,13 @@ class MainWindow(QMainWindow):
                 bind,
             )
 
-    def _capture_key(self, key):
-        bind = keyboard_to_bind(key)
+    def _capture_key(
+        self,
+        key,
+    ):
+        bind = keyboard_to_bind(
+            key
+        )
 
         if bind == "key:esc":
             self.bind_signal.emit(
@@ -819,9 +930,12 @@ class MainWindow(QMainWindow):
             self.stop_controller()
 
     def start_controller(self):
-        if self.team_bind == self.all_bind:
+        if (
+            self.team_bind
+            == self.all_bind
+        ):
             self.set_status(
-                "Ошибка: бинды совпадают"
+                "Бинды не могут совпадать"
             )
             return
 
@@ -831,7 +945,7 @@ class MainWindow(QMainWindow):
 
         if not device:
             self.set_status(
-                "Ошибка: микрофон не выбран"
+                "Микрофон не выбран"
             )
             return
 
@@ -877,7 +991,8 @@ class MainWindow(QMainWindow):
                     self.all_bind,
 
                 auto_send=
-                    self.auto_send.isChecked(),
+                    self.auto_send
+                    .isChecked(),
 
                 on_status=
                     self.status_signal.emit,
@@ -972,10 +1087,6 @@ class MainWindow(QMainWindow):
             enabled
         )
 
-        self.refresh_button.setEnabled(
-            enabled
-        )
-
         self.team_button.setEnabled(
             enabled
         )
@@ -992,23 +1103,26 @@ class MainWindow(QMainWindow):
     # Status
     # ========================================================
 
-    def set_status(self, text):
+    def set_status(
+        self,
+        text,
+    ):
         lower = text.lower()
 
         if "слушаю" in lower:
-            color = "#FF5252"
+            color = "#ff5252"
 
         elif "распозна" in lower:
-            color = "#FFB74D"
+            color = "#ffb74d"
 
         elif "ошибка" in lower:
-            color = "#FF5252"
+            color = "#ff5252"
 
         elif "готов" in lower:
-            color = "#66BB6A"
+            color = "#66bb6a"
 
         else:
-            color = "#9AA0AA"
+            color = "#9aa0aa"
 
         self.status_label.setText(
             f"● {text}"
@@ -1019,12 +1133,21 @@ class MainWindow(QMainWindow):
             "font-weight: 600;"
         )
 
-    def set_last_text(self, text):
-        self.last_text.setText(text)
+    def set_last_text(
+        self,
+        text,
+    ):
+        self.last_text.setText(
+            text
+        )
 
-    def set_timing(self, seconds):
+    def set_timing(
+        self,
+        seconds,
+    ):
         self.timing_label.setText(
-            f"Обработка: {seconds:.3f} сек."
+            f"Обработка: "
+            f"{seconds:.3f} сек."
         )
 
     # ========================================================
@@ -1049,7 +1172,8 @@ class MainWindow(QMainWindow):
                 self.all_bind,
 
             "auto_send":
-                self.auto_send.isChecked(),
+                self.auto_send
+                .isChecked(),
 
             "minimize_to_tray":
                 self.minimize_to_tray
@@ -1060,127 +1184,33 @@ class MainWindow(QMainWindow):
                 .isChecked(),
 
             "autostart":
-                self.autostart.isChecked(),
+                self.autostart
+                .isChecked(),
 
             "start_minimized":
                 self.start_minimized
                 .isChecked(),
         }
 
-        save_settings(settings)
+        save_settings(
+            settings
+        )
 
         set_autostart(
             settings["autostart"]
         )
 
     # ========================================================
-    # Tray
+    # Window / tray behavior
     # ========================================================
 
-    def setup_tray(self):
-        icon = self.style().standardIcon(
-            QStyle.StandardPixmap
-            .SP_ComputerIcon
-        )
-
-        self.tray = QSystemTrayIcon(
-            icon,
-            self,
-        )
-
-        self.tray.setToolTip(
-            "Dota2voice2text"
-        )
-
-        menu = QMenu()
-
-        open_action = QAction(
-            "Открыть",
-            self,
-        )
-
-        open_action.triggered.connect(
-            self.show_from_tray
-        )
-
-        menu.addAction(open_action)
-
-        self.tray_toggle_action = QAction(
-            "Запустить",
-            self,
-        )
-
-        self.tray_toggle_action.triggered.connect(
-            self.toggle
-        )
-
-        menu.addAction(
-            self.tray_toggle_action
-        )
-
-        menu.addSeparator()
-
-        quit_action = QAction(
-            "Выход",
-            self,
-        )
-
-        quit_action.triggered.connect(
-            self.quit_application
-        )
-
-        menu.addAction(quit_action)
-
-        self.tray.setContextMenu(menu)
-
-        self.tray.activated.connect(
-            self.tray_activated
-        )
-
-        self.tray.show()
-
-    def tray_activated(
+    def changeEvent(
         self,
-        reason,
+        event,
     ):
-        if reason == (
-            QSystemTrayIcon
-            .ActivationReason
-            .DoubleClick
-        ):
-            self.show_from_tray()
-
-    def show_from_tray(self):
-        self.show()
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
-
-    def show_tray_notification(
-        self,
-        message,
-    ):
-        if not (
-            self.show_notifications
-            .isChecked()
-        ):
-            return
-
-        self.tray.showMessage(
-            "Dota2voice2text",
-            message,
-            QSystemTrayIcon
-            .MessageIcon
-            .Information,
-            3000,
+        super().changeEvent(
+            event
         )
-
-    # ========================================================
-    # Window behavior
-    # ========================================================
-
-    def changeEvent(self, event):
-        super().changeEvent(event)
 
         if event.type() != (
             QEvent.Type.WindowStateChange
@@ -1203,7 +1233,10 @@ class MainWindow(QMainWindow):
             "и продолжает работать в фоне."
         )
 
-    def closeEvent(self, event):
+    def closeEvent(
+        self,
+        event,
+    ):
         self.save_current_settings()
 
         if (
@@ -1212,6 +1245,7 @@ class MainWindow(QMainWindow):
             and not self.force_quit
         ):
             event.ignore()
+
             self.hide()
 
             self.show_tray_notification(
@@ -1243,3 +1277,6 @@ class MainWindow(QMainWindow):
         self.tray.hide()
 
         QApplication.instance().quit()
+
+
+

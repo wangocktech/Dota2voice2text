@@ -1,6 +1,5 @@
 ﻿import json
 import re
-from pathlib import Path
 from time import perf_counter
 
 import numpy as np
@@ -10,15 +9,10 @@ from rapidfuzz.distance import Levenshtein
 from tokenizers import Tokenizer
 
 
-ROOT = Path(__file__).resolve().parents[2]
+from src.utils.paths import resource_path
 
-DATA_DIR = ROOT / "data"
-
-PUNCT_DIR = (
-    ROOT
-    / "models"
-    / "rupunct-small-onnx"
-)
+DATA_DIR = resource_path("data")
+PUNCT_DIR = resource_path("models/rupunct-small-onnx")
 
 
 PUNCTUATION = {
@@ -403,3 +397,5 @@ class TextPostProcessor:
         )
 
         return final, elapsed
+
+

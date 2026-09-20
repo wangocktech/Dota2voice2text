@@ -19,6 +19,7 @@ class VoiceController:
         auto_send: bool = False,
         on_status=None,
         on_text=None,
+        on_timing=None,
     ):
         self.device_index = device_index
 
@@ -33,6 +34,11 @@ class VoiceController:
         self.on_text = (
             on_text
             or (lambda text: None)
+        )
+
+        self.on_timing = (
+            on_timing
+            or (lambda value: None)
         )
 
         # Модели загружаются один раз.
@@ -340,6 +346,8 @@ class VoiceController:
                 f"{total_time:.3f} сек."
             )
 
+            self.on_timing(total_time)
+
             if total_time > 5:
                 print(
                     "⚠ Превышено 5 секунд!"
@@ -366,3 +374,4 @@ class VoiceController:
 
         finally:
             self.processing = False
+

@@ -3,20 +3,45 @@
 from PySide6.QtWidgets import QApplication
 
 from src.gui.main_window import MainWindow
+from src.version import (
+    APP_NAME,
+    APP_VERSION,
+)
 
 
 def main():
     app = QApplication(sys.argv)
 
     app.setApplicationName(
-        "Dota2voice2text"
+        APP_NAME
     )
 
-    # Нужно для работы системного трея.
-    app.setQuitOnLastWindowClosed(False)
+    app.setApplicationVersion(
+        APP_VERSION
+    )
 
-    window = MainWindow()
-    window.show()
+    app.setQuitOnLastWindowClosed(
+        False
+    )
+
+    start_hidden = (
+        "--minimized"
+        in sys.argv
+    )
+
+    window = MainWindow(
+        start_hidden=start_hidden
+    )
+
+    if window.start_hidden:
+        window.hide()
+
+        window.show_tray_notification(
+            "Dota2voice2text запущен "
+            "в системном трее."
+        )
+    else:
+        window.show()
 
     sys.exit(
         app.exec()

@@ -1,16 +1,13 @@
-﻿from pathlib import Path
-from time import perf_counter
+﻿from time import perf_counter
 
 import numpy as np
 import sherpa_onnx
 
+from src.utils.paths import resource_path
 
-ROOT = Path(__file__).resolve().parents[2]
 
-MODEL_DIR = (
-    ROOT
-    / "models"
-    / "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19"
+MODEL_DIR = resource_path(
+    "models/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19"
 )
 
 
@@ -49,9 +46,7 @@ class GigaAMEngine:
             dtype=np.float32,
         )
 
-        stream = (
-            self.recognizer.create_stream()
-        )
+        stream = self.recognizer.create_stream()
 
         stream.accept_waveform(
             sample_rate,
@@ -62,10 +57,7 @@ class GigaAMEngine:
             stream
         )
 
-        text = (
-            stream.result.text
-            .strip()
-        )
+        text = stream.result.text.strip()
 
         elapsed = (
             perf_counter()
