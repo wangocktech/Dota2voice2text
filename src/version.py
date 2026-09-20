@@ -1,4 +1,5 @@
 ﻿APP_NAME = "Dota2voice2text"
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
+
 
 
