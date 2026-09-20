@@ -41,3 +41,11 @@ models/
 recordings/
 *.wav
 *.mp3
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Release archives
+Dota2voice2text-v*.zip
