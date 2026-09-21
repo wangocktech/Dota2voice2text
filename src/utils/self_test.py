@@ -13,6 +13,7 @@ import sounddevice as sd
 from src.input.dota_sender import DotaChatSender
 from src.input.hotkeys import humanize_bind
 from src.speech.gigaam_engine import GigaAMEngine
+from src.speech.adaptive_asr import AdaptiveASR
 from src.text.postprocessor import TextPostProcessor
 from src.text.translation_model_manager import (
     is_translation_model_installed,
@@ -110,7 +111,7 @@ def format_self_test_report(report: SelfTestReport) -> str:
             "",
             "Синтетический benchmark текущего pipeline: "
             f"{report.pipeline_seconds:.3f} сек.",
-            "Цель после отпускания PTT: < 5 сек.",
+            "Цель распознавания после отпускания PTT: < 3 сек.",
         ])
 
     return "\n".join(lines)
@@ -366,6 +367,58 @@ def run_self_test(
         ))
 
     # --------------------------------------------------------
+    # Adaptive ASR deadline wrapper
+    # --------------------------------------------------------
+    started = perf_counter()
+    try:
+        if speech is None:
+            raise RuntimeError("GigaAM недоступен")
+
+        if (
+            controller is not None
+            and hasattr(controller, "adaptive_asr")
+        ):
+            adaptive = controller.adaptive_asr
+            source = "уже загруженный Adaptive ASR"
+        else:
+            adaptive = AdaptiveASR(speech)
+            source = "Adaptive ASR создан для теста"
+
+        silence = np.zeros(
+            4000,
+            dtype=np.float32,
+        )
+
+        adaptive_result = adaptive.transcribe(
+            silence,
+            16000,
+            deadline_at=perf_counter() + 2.0,
+        )
+
+        status = (
+            "error"
+            if adaptive_result.timed_out
+            else "pass"
+        )
+
+        emit(_item(
+            "adaptive_asr",
+            "Adaptive ASR ≤ 3 сек.",
+            status,
+            f"{source} • {adaptive_result.mode} • "
+            f"{adaptive_result.elapsed_seconds:.3f} сек.",
+            perf_counter() - started,
+        ))
+    except Exception as exc:
+        emit(_item(
+            "adaptive_asr",
+            "Adaptive ASR ≤ 3 сек.",
+            "error",
+            str(exc),
+            perf_counter() - started,
+        ))
+
+    # --------------------------------------------------------
     # RUPunct + Dota correction
     # --------------------------------------------------------
     post = None
@@ -475,7 +528,7 @@ def run_self_test(
         )
         status = (
             "pass"
-            if pipeline_seconds < 5.0
+            if pipeline_seconds < 3.0
             else "warning"
         )
         emit(_item(
@@ -484,7 +537,7 @@ def run_self_test(
             status,
             (
                 f"Синтетический inference: {pipeline_seconds:.3f} сек. • "
-                "цель < 5 сек. после отпускания PTT"
+                "цель < 3 сек. после отпускания PTT"
             ),
             pipeline_seconds,
         ))

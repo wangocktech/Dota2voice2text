@@ -1,5 +1,6 @@
 import threading
-from time import perf_counter
+from collections import deque
+from time import perf_counter, sleep
 
 import numpy as np
 import sounddevice as sd
@@ -7,8 +8,10 @@ import sounddevice as sd
 from src.input.dota_sender import DotaChatSender
 from src.input.hotkeys import GlobalPTTListener
 from src.speech.gigaam_engine import GigaAMEngine
+from src.speech.adaptive_asr import AdaptiveASR
 from src.text.postprocessor import TextPostProcessor
 from src.utils.dota_status import is_dota_running
+from src.utils.asr_metrics import save_asr_metrics
 from src.text.translator import EnglishTranslator
 from src.text.translation_model_manager import (
     is_translation_model_installed,
@@ -50,6 +53,7 @@ class VoiceController:
         # Models are loaded once when the controller starts.
         self.on_status("Загрузка GigaAM...")
         self.speech = GigaAMEngine()
+        self.adaptive_asr = AdaptiveASR(self.speech)
 
         self.on_status("Загрузка корректора...")
         self.postprocessor = TextPostProcessor()
@@ -78,8 +82,17 @@ class VoiceController:
         self.stream = None
 
         self.recording = False
+        self.tail_capture = False
         self.processing = False
         self.chat_type = None
+
+        self.pre_roll_seconds = 0.30
+        self.tail_seconds = 0.30
+        self.block_duration = 0.02
+        self.blocksize = max(160, int(self.sample_rate * self.block_duration))
+        self.pre_roll_max_samples = max(1, int(self.sample_rate * self.pre_roll_seconds))
+        self.pre_roll_frames = deque()
+        self.pre_roll_samples = 0
 
         self.lock = threading.Lock()
 
@@ -94,6 +107,7 @@ class VoiceController:
     # ========================================================
 
     def start(self):
+        self._ensure_audio_stream()
         self.hotkeys.start()
         self.on_status("Готов")
 
@@ -110,6 +124,8 @@ class VoiceController:
             self.stream = None
 
         self.recording = False
+        self.tail_capture = False
+        self.processing = False
         self.on_ptt(False, self.chat_type or "")
         self.on_status("Остановлено")
 
@@ -144,6 +160,17 @@ class VoiceController:
     # Audio
     # ========================================================
 
+    def _remember_pre_roll(self, chunk: np.ndarray):
+        self.pre_roll_frames.append(chunk)
+        self.pre_roll_samples += len(chunk)
+
+        while (
+            self.pre_roll_frames
+            and self.pre_roll_samples > self.pre_roll_max_samples
+        ):
+            removed = self.pre_roll_frames.popleft()
+            self.pre_roll_samples -= len(removed)
+
     def _audio_callback(
         self,
         indata,
@@ -154,36 +181,56 @@ class VoiceController:
         if status:
             print(f"[AUDIO] {status}")
 
-        with self.lock:
-            if self.recording:
-                self.frames.append(
-                    indata[:, 0]
-                    .astype(np.float32)
-                    .copy()
-                )
+        chunk = (
+            indata[:, 0]
+            .astype(np.float32)
+            .copy()
+        )
 
-    def _start_recording(
-        self,
-        chat_type: str,
-    ):
-        if self.recording or self.processing:
+        with self.lock:
+            if self.recording or self.tail_capture:
+                self.frames.append(chunk)
+            else:
+                self._remember_pre_roll(chunk)
+
+    def _ensure_audio_stream(self):
+        if self.stream is not None:
             return
-
-        self.chat_type = chat_type
-
-        with self.lock:
-            self.frames = []
-            self.recording = True
 
         self.stream = sd.InputStream(
             device=self.device_index,
             samplerate=self.sample_rate,
             channels=1,
             dtype="float32",
+            blocksize=self.blocksize,
+            latency="low",
             callback=self._audio_callback,
         )
 
         self.stream.start()
+
+    def _start_recording(
+        self,
+        chat_type: str,
+    ):
+        if (
+            self.recording
+            or self.processing
+            or self.tail_capture
+        ):
+            return
+
+        self._ensure_audio_stream()
+        self.chat_type = chat_type
+
+        with self.lock:
+            # Copy a short rolling buffer so the first consonant is not lost
+            # when the user starts speaking at the same moment as the PTT press.
+            self.frames = [
+                frame.copy()
+                for frame in self.pre_roll_frames
+            ]
+            self.recording = True
 
         self.on_ptt(
             True,
@@ -212,46 +259,63 @@ class VoiceController:
 
         with self.lock:
             self.recording = False
-
-        if self.stream is not None:
-            self.stream.stop()
-            self.stream.close()
-            self.stream = None
-
-        with self.lock:
-            frames = self.frames.copy()
-            self.frames = []
-
-        if not frames:
-            self.on_status("Аудио не записано")
-            return
-
-        audio = np.concatenate(
-            frames
-        ).astype(np.float32)
-
-        duration = (
-            len(audio)
-            / self.sample_rate
-        )
-
-        if duration < 0.15:
-            self.on_status(
-                "Запись слишком короткая"
-            )
-            return
+            self.tail_capture = True
 
         chat_type = self.chat_type
         self.processing = True
 
         threading.Thread(
-            target=self._process,
-            args=(
-                audio,
-                chat_type,
-            ),
+            target=self._finish_capture_after_tail,
+            args=(chat_type,),
             daemon=True,
         ).start()
+
+    def _finish_capture_after_tail(
+        self,
+        chat_type: str,
+    ):
+        try:
+            # Keep a small post-release tail. It prevents the last consonant or
+            # short word from being cut when the user releases PTT quickly.
+            sleep(self.tail_seconds)
+
+            with self.lock:
+                self.tail_capture = False
+                frames = self.frames.copy()
+                self.frames = []
+
+            if not frames:
+                self.on_status("Аудио не записано")
+                self.processing = False
+                return
+
+            audio = np.concatenate(
+                frames
+            ).astype(np.float32)
+
+            duration = (
+                len(audio)
+                / self.sample_rate
+            )
+
+            if duration < 0.15:
+                self.on_status(
+                    "Запись слишком короткая"
+                )
+                self.processing = False
+                return
+
+            self._process(
+                audio,
+                chat_type,
+            )
+
+        except Exception as exc:
+            self.processing = False
+            print(f"❌ CAPTURE: {exc}")
+            self.on_status(
+                f"Ошибка: {exc}"
+            )
 
     # ========================================================
     # Pipeline
@@ -265,24 +329,66 @@ class VoiceController:
         try:
             self.on_status("Распознаю...")
 
-            raw_text, asr_time = (
-                self.speech.transcribe(
+            recognition_deadline = (
+                self.release_time + 2.85
+                if self.release_time is not None
+                else perf_counter() + 2.85
+            )
+
+            asr_result = (
+                self.adaptive_asr.transcribe(
                     audio,
                     self.sample_rate,
+                    deadline_at=recognition_deadline,
                 )
             )
+
+            raw_text = asr_result.text
+            asr_time = asr_result.elapsed_seconds
 
             print()
             print(f"🎙 RAW: {raw_text}")
             print(
-                f"⚡ GigaAM: "
-                f"{asr_time:.3f} сек."
+                f"⚡ Adaptive ASR: "
+                f"{asr_time:.3f} сек. | "
+                f"{asr_result.mode} | "
+                f"confidence "
+                f"{asr_result.confidence * 100:.0f}% | "
+                f"attempts {asr_result.attempts}"
+            )
+            print(
+                f"   preprocess "
+                f"{asr_result.preprocess_seconds:.3f}s | "
+                f"trim {asr_result.trimmed_ratio:.2f} | "
+                f"Dota hints {asr_result.dota_bias_hits}"
             )
 
-            if not raw_text:
-                self.on_status(
-                    "Речь не распознана"
+            if (
+                asr_result.candidate_b
+                and asr_result.candidate_b != asr_result.candidate_a
+            ):
+                print(
+                    "   Candidate A: "
+                    f"{asr_result.candidate_a}"
                 )
+                print(
+                    "   Candidate B: "
+                    f"{asr_result.candidate_b}"
+                )
+                print(
+                    "   Agreement: "
+                    f"{asr_result.agreement:.2f}"
+                )
+
+            if not raw_text:
+                if asr_result.timed_out:
+                    self.on_status(
+                        "Распознавание превысило 3 сек."
+                    )
+                else:
+                    self.on_status(
+                        "Речь не распознана"
+                    )
                 return
 
             final_text, post_time = (
@@ -347,6 +453,23 @@ class VoiceController:
                 - self.release_time
             )
 
+            save_asr_metrics({
+                "mode": asr_result.mode,
+                "confidence": round(asr_result.confidence, 3),
+                "attempts": asr_result.attempts,
+                "asr_seconds": round(asr_time, 4),
+                "preprocess_seconds": round(
+                    asr_result.preprocess_seconds,
+                    4,
+                ),
+                "post_seconds": round(post_time, 4),
+                "translation_seconds": round(translation_time, 4),
+                "total_seconds": round(total_time, 4),
+                "trimmed_ratio": round(asr_result.trimmed_ratio, 3),
+                "agreement": round(asr_result.agreement, 3),
+                "dota_bias_hits": asr_result.dota_bias_hits,
+            })
+
             print(
                 f"🚀 ВСЕГО: "
                 f"{total_time:.3f} сек."
@@ -361,9 +484,14 @@ class VoiceController:
 
             self.on_timing(total_time)
 
+            if asr_time > 2.85:
+                print(
+                    "⚠ ASR достиг лимита 3 секунд."
+                )
+
             if total_time > 5:
                 print(
-                    "⚠ Превышено 5 секунд!"
+                    "⚠ Полный pipeline превысил 5 секунд!"
                 )
 
             if inserted:

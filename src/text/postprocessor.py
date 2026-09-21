@@ -47,21 +47,25 @@ class TextPostProcessor:
             )
         )
 
-        terms = (
-            DATA_DIR
-            / "dota_terms.txt"
-        ).read_text(
-            encoding="utf-8"
-        ).splitlines()
-
-        self.term_map = {
-            term.lower(): term
-            for term in terms
-            if term.strip()
+        # IMPORTANT:
+        # dota_terms.txt contains many ordinary Russian words. Older builds used
+        # the whole file as a fuzzy-correction target, which could turn already
+        # correct ASR text into another valid word ("тест" -> "текст",
+        # "помогите" -> "помогут", etc.).
+        #
+        # v0.3.3 accuracy fix only allows fuzzy correction against explicit
+        # Dota aliases. Ordinary Russian words are therefore preserved.
+        self.fuzzy_aliases = {
+            source.lower(): target
+            for source, target in self.aliases.items()
+            if (
+                " " not in source.strip()
+                and len(source.strip()) >= 5
+            )
         }
 
-        self.terms = list(
-            self.term_map.keys()
+        self.fuzzy_alias_sources = list(
+            self.fuzzy_aliases.keys()
         )
 
         options = (
@@ -151,12 +155,20 @@ class TextPostProcessor:
         self,
         text: str,
     ) -> str:
+        """
+        Conservative Dota correction.
 
-        words = text.split()
+        Only explicit aliases may be used as fuzzy targets. This is deliberate:
+        a huge generic vocabulary can silently damage words that GigaAM already
+        recognized correctly.
+        """
+
+        if not self.fuzzy_alias_sources:
+            return text
 
         output = []
 
-        for word in words:
+        for word in text.split():
             clean = re.sub(
                 r"[^A-Za-zА-Яа-яЁё-]",
                 "",
@@ -165,23 +177,34 @@ class TextPostProcessor:
 
             lower = clean.lower()
 
-            if not lower:
+            if not lower or len(lower) < 5:
                 output.append(word)
                 continue
 
-            if lower in self.term_map:
+            # Exact aliases were already handled by _replace_aliases().
+            if lower in self.aliases:
                 output.append(word)
                 continue
 
-            if len(lower) < 4:
+            # Keep fuzzy search narrow: similar length + same first character.
+            candidates = [
+                source
+                for source in self.fuzzy_alias_sources
+                if (
+                    source[:1] == lower[:1]
+                    and abs(len(source) - len(lower)) <= 1
+                )
+            ]
+
+            if not candidates:
                 output.append(word)
                 continue
 
             match = process.extractOne(
                 lower,
-                self.terms,
+                candidates,
                 scorer=fuzz.ratio,
-                score_cutoff=78,
+                score_cutoff=86,
             )
 
             if match is None:
@@ -189,28 +212,38 @@ class TextPostProcessor:
                 continue
 
             candidate = match[0]
+            distance = Levenshtein.distance(
+                lower,
+                candidate,
+            )
 
             max_distance = (
                 1
-                if len(lower) <= 6
+                if len(lower) <= 8
                 else 2
             )
 
-            distance = (
-                Levenshtein.distance(
-                    lower,
-                    candidate,
-                )
-            )
-
-            if distance <= max_distance:
-                output.append(
-                    self.term_map[
-                        candidate
-                    ]
-                )
-            else:
+            if distance > max_distance:
                 output.append(word)
+                continue
+
+            replacement = self.fuzzy_aliases[
+                candidate
+            ]
+
+            # Preserve punctuation around the token.
+            start = word.find(clean)
+
+            if start < 0:
+                output.append(replacement)
+                continue
+
+            end = start + len(clean)
+            output.append(
+                word[:start]
+                + replacement
+                + word[end:]
+            )
 
         return " ".join(output)
 

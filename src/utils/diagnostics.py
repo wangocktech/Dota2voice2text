@@ -16,6 +16,7 @@ from src.utils.dota_status import (
 )
 from src.utils.logging_setup import get_log_dir
 from src.utils.health_check import evaluate_app_health
+from src.utils.asr_metrics import load_asr_metrics
 from src.version import APP_NAME, APP_VERSION
 
 
@@ -80,6 +81,18 @@ def build_diagnostics_text() -> str:
         ),
     )
 
+    asr = load_asr_metrics()
+
+    if asr:
+        asr_text = (
+            f"{asr.get('mode', 'unknown')} • "
+            f"confidence {float(asr.get('confidence', 0)) * 100:.0f}% • "
+            f"ASR {float(asr.get('asr_seconds', 0)):.3f}s • "
+            f"total {float(asr.get('total_seconds', 0)):.3f}s"
+        )
+    else:
+        asr_text = "no completed recognition yet"
+
     return "\n".join([
         f"{APP_NAME} v{APP_VERSION}",
         f"OS: {platform.platform()}",
@@ -94,5 +107,6 @@ def build_diagnostics_text() -> str:
         f"Translation model: {model_text}",
         f"Health ready: {health.ready}",
         f"Health issues: {len(health.issues)}",
+        f"Adaptive ASR latest: {asr_text}",
         f"Logs: {get_log_dir()}",
     ])
