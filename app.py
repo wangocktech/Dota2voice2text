@@ -11,12 +11,23 @@ from src.version import (
 )
 from src.utils.app_icon import get_app_icon
 from src.utils.windows_app import configure_windows_app
+from src.utils.single_instance import SingleInstanceGuard, activate_existing_instance
+
 
 
 
 
 def main():
     configure_windows_app()
+
+    instance_guard = SingleInstanceGuard()
+
+    if instance_guard.already_running:
+        if "--minimized" not in sys.argv:
+            activate_existing_instance()
+
+        instance_guard.close()
+        return
 
     setup_logging()
 
@@ -59,8 +70,13 @@ def main():
     else:
         window.show()
 
+    try:
+        exit_code = app.exec()
+    finally:
+        instance_guard.close()
+
     sys.exit(
-        app.exec()
+        exit_code
     )
 
 

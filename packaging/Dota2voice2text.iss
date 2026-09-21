@@ -1,5 +1,5 @@
 #define MyAppName "Dota2voice2text"
-#define MyAppVersion "0.3.1"
+#define MyAppVersion "0.3.2"
 #define MyAppPublisher "wangocktech"
 #define MyAppURL "https://github.com/wangocktech/Dota2voice2text"
 #define MyAppExeName "Dota2voice2text.exe"
@@ -28,7 +28,7 @@ SetupLogging=yes
 CloseApplications=yes
 RestartApplications=no
 UninstallDisplayName={#MyAppName}
-UninstallDisplayIcon={app}\Dota2voice2text-v0.3.1.ico
+UninstallDisplayIcon={app}\Dota2voice2text-v0.3.2.ico
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
@@ -45,10 +45,10 @@ Name: "desktopicon"; Description: "Создать ярлык на рабочем
 [Files]
 Source: "payload\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-Source: "..\assets\icons\app_icon.ico"; DestDir: "{app}"; DestName: "Dota2voice2text-v0.3.1.ico"; Flags: ignoreversion
+Source: "..\assets\icons\app_icon.ico"; DestDir: "{app}"; DestName: "Dota2voice2text-v0.3.2.ico"; Flags: ignoreversion
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\Dota2voice2text-v0.3.1.ico"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\Dota2voice2text-v0.3.1.ico"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\Dota2voice2text-v0.3.2.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\Dota2voice2text-v0.3.2.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}"; Flags: nowait postinstall skipifsilent
