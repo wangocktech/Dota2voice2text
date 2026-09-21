@@ -29,6 +29,7 @@ from src.update.update_manager import (
 from src.utils.logging_setup import (
     get_log_dir,
 )
+from src.utils.diagnostics import build_diagnostics_text
 from src.version import (
     APP_NAME,
     APP_VERSION,
@@ -158,6 +159,13 @@ class AboutDialog(QDialog):
             self.open_logs
         )
 
+        diagnostics_button = QPushButton(
+            "Копировать диагностику"
+        )
+        diagnostics_button.clicked.connect(
+            self.copy_diagnostics
+        )
+
         close_button = QPushButton(
             "Закрыть"
         )
@@ -183,6 +191,9 @@ class AboutDialog(QDialog):
         )
         bottom.addWidget(
             logs_button
+        )
+        bottom.addWidget(
+            diagnostics_button
         )
         bottom.addStretch()
         bottom.addWidget(
@@ -522,6 +533,19 @@ class AboutDialog(QDialog):
             parent.quit_application()
         else:
             self.accept()
+
+    def copy_diagnostics(self):
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.clipboard().setText(
+            build_diagnostics_text()
+        )
+
+        QMessageBox.information(
+            self,
+            "Диагностика",
+            "Диагностика скопирована в буфер обмена.",
+        )
 
     def open_logs(self):
         path = get_log_dir()

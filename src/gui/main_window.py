@@ -2,13 +2,14 @@ import threading
 
 from pynput import keyboard, mouse
 
-from PySide6.QtCore import QEvent, QTimer, Signal
+from PySide6.QtCore import QEvent, QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -24,16 +25,27 @@ from PySide6.QtWidgets import (
 )
 
 from src.audio.devices import get_input_devices
+from src.audio.mic_level import MicrophoneLevelMonitor
 from src.gui.about_dialog import AboutDialog
+from src.gui.custom_dictionary_dialog import CustomDictionaryDialog
+from src.gui.history_dialog import HistoryDialog
+from src.gui.onboarding_dialog import OnboardingDialog
+from src.gui.self_test_dialog import SelfTestDialog
 from src.config.autostart import set_autostart
 from src.config.settings import load_settings, save_settings
 from src.core.controller import VoiceController
+from src.history.history_store import add_history_entry
 from src.input.hotkeys import (
     humanize_bind,
     keyboard_to_bind,
     mouse_to_bind,
 )
 from src.version import APP_VERSION
+from src.utils.dota_status import get_dota_state
+from src.utils.health_check import (
+    evaluate_app_health,
+    format_health_report,
+)
 from src.utils.paths import resource_path
 from src.update.update_manager import (
     check_for_update,
@@ -261,6 +273,68 @@ QPushButton#startButton:disabled {
     border: none;
 }
 
+QProgressBar#micLevel {
+    min-height: 14px;
+    max-height: 14px;
+}
+
+QProgressBar#micLevel::chunk {
+    background-color: #5865F2;
+    border-radius: 6px;
+}
+
+QLabel#micTestStatus {
+    color: #9299A6;
+    font-size: 12px;
+}
+
+QLabel#dotaStatus {
+    background-color: #171A20;
+    border: 1px solid #2A2F39;
+    border-radius: 8px;
+    padding: 8px 11px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QLabel#healthStatus {
+    background-color: #171A20;
+    border: 1px solid #2A2F39;
+    border-radius: 8px;
+    padding: 8px 11px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QLabel#bindWarning {
+    color: #FFB74D;
+    font-size: 12px;
+    padding-top: 1px;
+}
+
+QPushButton[bindConflict="true"] {
+    border-color: #FF5252;
+    color: #FFB4B4;
+}
+
+QPushButton[bindConflict="true"]:hover {
+    border-color: #FF7676;
+}
+
+/* Main settings: fixed geometry without Qt stylesheet box-model overflow. */
+QComboBox#mainSettingsCombo {
+    min-height: 0px;
+    max-height: 36px;
+    padding: 0px 36px 0px 10px;
+}
+
+QPushButton#mainSettingsSideButton,
+QPushButton#mainSettingsBindButton {
+    min-height: 0px;
+    max-height: 36px;
+    padding: 0px 12px;
+}
+
 QMenu {
     background-color: #1B1F26;
     color: #FFFFFF;
@@ -320,6 +394,34 @@ class MainWindow(QMainWindow):
 
         self.settings = load_settings()
 
+        self.mic_monitor = (
+            MicrophoneLevelMonitor(
+                self
+            )
+        )
+
+        self.mic_monitor.level_changed.connect(
+            self._set_mic_level
+        )
+
+        self.mic_monitor.error.connect(
+            self._mic_test_error
+        )
+
+        self.mic_test_running = False
+        self.pending_history_text = ""
+        self._initial_positioned = False
+
+        self.dota_status_timer = QTimer(
+            self
+        )
+        self.dota_status_timer.setInterval(
+            1500
+        )
+        self.dota_status_timer.timeout.connect(
+            self.refresh_dota_status
+        )
+
         self.team_bind = self.settings.get(
             "team_bind",
             "mouse:x2",
@@ -338,8 +440,8 @@ class MainWindow(QMainWindow):
             f"Dota2voice2text v{APP_VERSION}"
         )
 
-        self.resize(720, 840)
-        self.setMinimumSize(680, 760)
+        self.resize(720, 940)
+        self.setMinimumSize(680, 860)
 
         combo_arrow = resource_path(
             "assets/icons/chevron-down.svg"
@@ -392,6 +494,9 @@ class MainWindow(QMainWindow):
         self.load_devices()
         self.setup_tray()
 
+        self.refresh_dota_status()
+        self.dota_status_timer.start()
+
         QTimer.singleShot(
             1800,
             self.check_updates_background,
@@ -410,6 +515,18 @@ class MainWindow(QMainWindow):
                 )
             )
         )
+
+        if (
+            not self.settings.get(
+                "onboarding_completed",
+                False,
+            )
+            and not self.start_hidden
+        ):
+            QTimer.singleShot(
+                650,
+                self.show_onboarding,
+            )
 
     # ========================================================
     # UI
@@ -460,6 +577,36 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(title)
         title_layout.addWidget(subtitle)
 
+        self.history_button = QPushButton(
+            "История"
+        )
+        self.history_button.setObjectName(
+            "headerButton"
+        )
+        self.history_button.clicked.connect(
+            self.show_history_dialog
+        )
+
+        self.dictionary_button = QPushButton(
+            "Словарь"
+        )
+        self.dictionary_button.setObjectName(
+            "headerButton"
+        )
+        self.dictionary_button.clicked.connect(
+            self.show_custom_dictionary
+        )
+
+        self.setup_button = QPushButton(
+            "Настройка"
+        )
+        self.setup_button.setObjectName(
+            "headerButton"
+        )
+        self.setup_button.clicked.connect(
+            self.show_onboarding
+        )
+
         self.about_button = QPushButton(
             "О программе"
         )
@@ -474,6 +621,15 @@ class MainWindow(QMainWindow):
         header.addStretch()
         header.addWidget(version)
         header.addWidget(
+            self.history_button
+        )
+        header.addWidget(
+            self.dictionary_button
+        )
+        header.addWidget(
+            self.setup_button
+        )
+        header.addWidget(
             self.about_button
         )
 
@@ -486,48 +642,227 @@ class MainWindow(QMainWindow):
         settings_box = QGroupBox(
             "Основные настройки"
         )
+        settings_box.setMinimumHeight(
+            220
+        )
 
-        form = QFormLayout()
+        settings_layout = QVBoxLayout()
+        settings_layout.setContentsMargins(
+            12,
+            12,
+            12,
+            10,
+        )
+        settings_layout.setSpacing(6)
 
-        form.setHorizontalSpacing(18)
-        form.setVerticalSpacing(12)
+        label_width = 108
+        side_button_width = 140
+        control_height = 36
 
-        form.setContentsMargins(
-            8,
-            8,
-            8,
-            8,
+        # -------------------------
+        # Микрофон
+        # -------------------------
+
+        microphone_row = QWidget()
+        microphone_row.setFixedHeight(
+            38
+        )
+        microphone_row.setStyleSheet(
+            "background: transparent;"
+        )
+
+        microphone_layout = QHBoxLayout(
+            microphone_row
+        )
+        microphone_layout.setContentsMargins(
+            0,
+            1,
+            0,
+            1,
+        )
+        microphone_layout.setSpacing(10)
+
+        microphone_label = QLabel(
+            "Микрофон:"
+        )
+        microphone_label.setFixedWidth(
+            label_width
         )
 
         self.device_combo = QComboBox()
+        self.device_combo.setObjectName(
+            "mainSettingsCombo"
+        )
+        self.device_combo.setFixedHeight(
+            control_height
+        )
 
         self.refresh_button = QPushButton(
             "Обновить"
         )
-
-        self.refresh_button.setFixedWidth(
-            100
+        self.refresh_button.setObjectName(
+            "mainSettingsSideButton"
         )
-
+        self.refresh_button.setFixedSize(
+            side_button_width,
+            control_height,
+        )
         self.refresh_button.clicked.connect(
             self.load_devices
         )
 
-        device_row = QHBoxLayout()
-        device_row.setSpacing(8)
-
-        device_row.addWidget(
+        microphone_layout.addWidget(
+            microphone_label
+        )
+        microphone_layout.addWidget(
             self.device_combo,
             1,
         )
-
-        device_row.addWidget(
-            self.refresh_button,
+        microphone_layout.addWidget(
+            self.refresh_button
         )
 
-        form.addRow(
-            "Микрофон:",
-            device_row,
+        settings_layout.addWidget(
+            microphone_row
+        )
+
+        # -------------------------
+        # Уровень микрофона
+        # -------------------------
+
+        level_row = QWidget()
+        level_row.setFixedHeight(
+            44
+        )
+        level_row.setStyleSheet(
+            "background: transparent;"
+        )
+
+        level_layout = QHBoxLayout(
+            level_row
+        )
+        level_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        level_layout.setSpacing(10)
+
+        level_label = QLabel(
+            "Уровень:"
+        )
+        level_label.setFixedWidth(
+            label_width
+        )
+
+        level_center = QWidget()
+        level_center.setStyleSheet(
+            "background: transparent;"
+        )
+
+        level_center_layout = QVBoxLayout(
+            level_center
+        )
+        level_center_layout.setContentsMargins(
+            0,
+            2,
+            0,
+            1,
+        )
+        level_center_layout.setSpacing(3)
+
+        self.mic_level_bar = QProgressBar()
+        self.mic_level_bar.setObjectName(
+            "micLevel"
+        )
+        self.mic_level_bar.setRange(
+            0,
+            100,
+        )
+        self.mic_level_bar.setValue(0)
+        self.mic_level_bar.setTextVisible(
+            False
+        )
+
+        self.mic_test_status = QLabel(
+            "Проверь, слышит ли программа микрофон."
+        )
+        self.mic_test_status.setObjectName(
+            "micTestStatus"
+        )
+        self.mic_test_status.setFixedHeight(
+            16
+        )
+
+        level_center_layout.addWidget(
+            self.mic_level_bar
+        )
+        level_center_layout.addWidget(
+            self.mic_test_status
+        )
+
+        self.mic_test_button = QPushButton(
+            "Тест микрофона"
+        )
+        self.mic_test_button.setObjectName(
+            "mainSettingsSideButton"
+        )
+        self.mic_test_button.setFixedSize(
+            side_button_width,
+            control_height,
+        )
+        self.mic_test_button.clicked.connect(
+            self.toggle_mic_test
+        )
+
+        level_layout.addWidget(
+            level_label
+        )
+        level_layout.addWidget(
+            level_center,
+            1,
+        )
+        level_layout.addWidget(
+            self.mic_test_button
+        )
+
+        settings_layout.addWidget(
+            level_row
+        )
+
+        self.device_combo.currentIndexChanged.connect(
+            self._device_selection_changed
+        )
+
+        # -------------------------
+        # Командный чат
+        # -------------------------
+
+        team_row = QWidget()
+        team_row.setFixedHeight(
+            38
+        )
+        team_row.setStyleSheet(
+            "background: transparent;"
+        )
+
+        team_layout = QHBoxLayout(
+            team_row
+        )
+        team_layout.setContentsMargins(
+            0,
+            1,
+            0,
+            1,
+        )
+        team_layout.setSpacing(10)
+
+        team_label = QLabel(
+            "Командный чат:"
+        )
+        team_label.setFixedWidth(
+            label_width
         )
 
         self.team_button = QPushButton(
@@ -535,16 +870,58 @@ class MainWindow(QMainWindow):
                 self.team_bind
             )
         )
-
+        self.team_button.setObjectName(
+            "mainSettingsBindButton"
+        )
+        self.team_button.setFixedHeight(
+            control_height
+        )
         self.team_button.clicked.connect(
             lambda: self.capture_bind(
                 "team"
             )
         )
 
-        form.addRow(
-            "Командный чат:",
+        team_layout.addWidget(
+            team_label
+        )
+        team_layout.addWidget(
             self.team_button,
+            1,
+        )
+
+        settings_layout.addWidget(
+            team_row
+        )
+
+        # -------------------------
+        # Общий чат
+        # -------------------------
+
+        all_row = QWidget()
+        all_row.setFixedHeight(
+            38
+        )
+        all_row.setStyleSheet(
+            "background: transparent;"
+        )
+
+        all_layout = QHBoxLayout(
+            all_row
+        )
+        all_layout.setContentsMargins(
+            0,
+            1,
+            0,
+            1,
+        )
+        all_layout.setSpacing(10)
+
+        all_label = QLabel(
+            "Общий чат:"
+        )
+        all_label.setFixedWidth(
+            label_width
         )
 
         self.all_button = QPushButton(
@@ -552,21 +929,48 @@ class MainWindow(QMainWindow):
                 self.all_bind
             )
         )
-
+        self.all_button.setObjectName(
+            "mainSettingsBindButton"
+        )
+        self.all_button.setFixedHeight(
+            control_height
+        )
         self.all_button.clicked.connect(
             lambda: self.capture_bind(
                 "all"
             )
         )
 
-        form.addRow(
-            "Общий чат:",
+        all_layout.addWidget(
+            all_label
+        )
+        all_layout.addWidget(
             self.all_button,
+            1,
         )
 
-        settings_box.setLayout(form)
+        settings_layout.addWidget(
+            all_row
+        )
 
-        layout.addWidget(settings_box)
+        self.bind_warning = QLabel()
+        self.bind_warning.setObjectName(
+            "bindWarning"
+        )
+        self.bind_warning.setWordWrap(
+            True
+        )
+        self.bind_warning.hide()
+        settings_layout.addWidget(
+            self.bind_warning
+        )
+
+        settings_box.setLayout(
+            settings_layout
+        )
+        layout.addWidget(
+            settings_box
+        )
 
         # ----------------------------------------------------
         # Поведение
@@ -766,6 +1170,10 @@ class MainWindow(QMainWindow):
             self.translate_to_english
         )
 
+        self.translate_to_english.toggled.connect(
+            self.refresh_health_status
+        )
+
         model_row = QHBoxLayout()
         model_row.setSpacing(10)
         model_row.setContentsMargins(
@@ -818,6 +1226,56 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(
             behavior_box
+        )
+
+        # ----------------------------------------------------
+        # Dota 2
+        # ----------------------------------------------------
+
+        self.dota_status_label = QLabel(
+            "● Dota 2: проверка..."
+        )
+        self.dota_status_label.setObjectName(
+            "dotaStatus"
+        )
+
+        layout.addWidget(
+            self.dota_status_label
+        )
+
+        health_row = QHBoxLayout()
+        health_row.setSpacing(8)
+
+        self.health_status_label = QLabel(
+            "● Готовность: проверка..."
+        )
+        self.health_status_label.setObjectName(
+            "healthStatus"
+        )
+
+        self.health_check_button = QPushButton(
+            "Самотест"
+        )
+        self.health_check_button.setObjectName(
+            "headerButton"
+        )
+        self.health_check_button.setFixedWidth(
+            100
+        )
+        self.health_check_button.clicked.connect(
+            self.show_health_check
+        )
+
+        health_row.addWidget(
+            self.health_status_label,
+            1,
+        )
+        health_row.addWidget(
+            self.health_check_button,
+        )
+
+        layout.addLayout(
+            health_row
         )
 
         # ----------------------------------------------------
@@ -915,6 +1373,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self.refresh_translation_model_ui()
+        self.refresh_bind_conflict_ui()
+        self.refresh_health_status()
 
     # ========================================================
     # Translation model
@@ -1408,6 +1868,213 @@ class MainWindow(QMainWindow):
                 selected
             )
 
+        self.refresh_health_status()
+
+    # ========================================================
+    # Microphone test / onboarding
+    # ========================================================
+
+    def _select_device_by_key(
+        self,
+        device_key,
+    ):
+        if not device_key:
+            return
+
+        for index in range(
+            self.device_combo.count()
+        ):
+            data = (
+                self.device_combo.itemData(
+                    index
+                )
+            )
+
+            if (
+                data
+                and data.get("key") == device_key
+            ):
+                self.device_combo.setCurrentIndex(
+                    index
+                )
+                return
+
+    def _device_selection_changed(
+        self,
+        *args,
+    ):
+        self.refresh_health_status()
+
+        if not self.mic_test_running:
+            return
+
+        self.stop_mic_test()
+        self.start_mic_test()
+
+    def toggle_mic_test(self):
+        if self.mic_test_running:
+            self.stop_mic_test()
+        else:
+            self.start_mic_test()
+
+    def start_mic_test(self):
+        if (
+            self.controller is not None
+            or self.loading
+        ):
+            return
+
+        device = (
+            self.device_combo.currentData()
+        )
+
+        if not device:
+            self.mic_test_status.setText(
+                "Микрофон не выбран."
+            )
+            return
+
+        try:
+            self.mic_monitor.start(
+                device["index"]
+            )
+
+            self.mic_test_running = True
+
+            self.mic_test_button.setText(
+                "Остановить тест"
+            )
+
+            self.mic_test_status.setText(
+                "Говори — полоска должна двигаться."
+            )
+
+        except Exception as exc:
+            self.mic_test_running = False
+
+            self.mic_test_button.setText(
+                "Тест микрофона"
+            )
+
+            self.mic_test_status.setText(
+                f"Ошибка микрофона: {exc}"
+            )
+
+    def stop_mic_test(self):
+        self.mic_monitor.stop()
+        self.mic_test_running = False
+
+        if hasattr(
+            self,
+            "mic_level_bar",
+        ):
+            self.mic_level_bar.setValue(0)
+
+        if hasattr(
+            self,
+            "mic_test_button",
+        ):
+            self.mic_test_button.setText(
+                "Тест микрофона"
+            )
+
+    def _set_mic_level(
+        self,
+        value,
+    ):
+        if not self.mic_test_running:
+            return
+
+        self.mic_level_bar.setValue(
+            value
+        )
+
+        if value >= 65:
+            text = (
+                "Громко — микрофон работает отлично."
+            )
+        elif value >= 25:
+            text = (
+                "Микрофон слышит голос."
+            )
+        elif value >= 7:
+            text = (
+                "Сигнал есть, говори чуть громче."
+            )
+        else:
+            text = (
+                "Ожидаю голос..."
+            )
+
+        self.mic_test_status.setText(
+            text
+        )
+
+    def _mic_test_error(
+        self,
+        error,
+    ):
+        if not self.mic_test_running:
+            return
+
+        self.mic_test_status.setText(
+            f"Ошибка микрофона: {error}"
+        )
+
+    def show_onboarding(self):
+        if (
+            self.controller is not None
+            or self.loading
+        ):
+            QMessageBox.information(
+                self,
+                "Первичная настройка",
+                "Сначала останови распознавание.",
+            )
+            return
+
+        self.stop_mic_test()
+
+        current = (
+            self.device_combo.currentData()
+        )
+
+        current_key = (
+            current.get("key", "")
+            if current
+            else self.settings.get(
+                "device_key",
+                "",
+            )
+        )
+
+        dialog = OnboardingDialog(
+            devices=get_input_devices(),
+            selected_device_key=current_key,
+            team_bind=self.team_bind,
+            all_bind=self.all_bind,
+            parent=self,
+        )
+
+        if not dialog.exec():
+            return
+
+        self._select_device_by_key(
+            dialog.selected_device_key()
+        )
+
+        self.settings[
+            "onboarding_completed"
+        ] = True
+
+        self.save_current_settings()
+
+        self.mic_test_status.setText(
+            "Настройка завершена. Микрофон готов."
+        )
+
+        self.refresh_health_status()
+
     # ========================================================
     # Bind capture
     # ========================================================
@@ -1511,7 +2178,190 @@ class MainWindow(QMainWindow):
             )
         )
 
+        self.refresh_bind_conflict_ui()
+        self.refresh_health_status()
+
         self.capture_target = None
+
+    # ========================================================
+    # Dota / binds health
+    # ========================================================
+
+    def refresh_dota_status(self):
+        try:
+            state = get_dota_state()
+
+            if state.foreground:
+                text = "● Dota 2: активна"
+                color = "#57F287"
+                border = "#2E7D4F"
+            elif state.running:
+                text = (
+                    "● Dota 2: запущена, "
+                    "но окно не активно"
+                )
+                color = "#FFB74D"
+                border = "#6E552A"
+            else:
+                text = "○ Dota 2: не запущена"
+                color = "#9299A6"
+                border = "#2A2F39"
+
+            self.dota_status_label.setText(
+                text
+            )
+            self.dota_status_label.setStyleSheet(
+                f"color: {color};"
+                f"border-color: {border};"
+            )
+
+        except Exception:
+            self.dota_status_label.setText(
+                "○ Dota 2: статус недоступен"
+            )
+            self.dota_status_label.setStyleSheet(
+                "color: #9299A6;"
+            )
+
+        self.refresh_health_status()
+
+    def refresh_health_status(self):
+        if not hasattr(
+            self,
+            "health_status_label",
+        ):
+            return
+
+        device = (
+            self.device_combo.currentData()
+            if hasattr(
+                self,
+                "device_combo",
+            )
+            else None
+        )
+
+        translate_enabled = bool(
+            hasattr(
+                self,
+                "translate_to_english",
+            )
+            and self.translate_to_english.isChecked()
+        )
+
+        report = evaluate_app_health(
+            device=device,
+            team_bind=self.team_bind,
+            all_bind=self.all_bind,
+            translate_enabled=translate_enabled,
+        )
+
+        self.current_health_report = report
+
+        if report.blockers:
+            color = "#FF5252"
+            border = "#71363A"
+            prefix = "●"
+        elif report.warnings:
+            color = "#FFB74D"
+            border = "#6E552A"
+            prefix = "●"
+        else:
+            color = "#57F287"
+            border = "#2E7D4F"
+            prefix = "●"
+
+        self.health_status_label.setText(
+            f"{prefix} Готовность: {report.summary}"
+        )
+
+        self.health_status_label.setStyleSheet(
+            f"color: {color};"
+            f"border-color: {border};"
+        )
+
+        if (
+            self.controller is None
+            and not self.loading
+            and not self.model_downloading
+        ):
+            self.start_button.setEnabled(
+                report.ready
+            )
+
+    def show_health_check(self):
+        if self.loading:
+            QMessageBox.information(
+                self,
+                "Самотест",
+                "Дождись завершения загрузки моделей.",
+            )
+            return
+
+        if self.model_downloading:
+            QMessageBox.information(
+                self,
+                "Самотест",
+                "Дождись завершения загрузки модели перевода.",
+            )
+            return
+
+        self.stop_mic_test()
+        self.refresh_health_status()
+
+        device = self.device_combo.currentData()
+        device_index = (
+            device.get("index")
+            if device
+            else None
+        )
+
+        dialog = SelfTestDialog(
+            self,
+            device_index=device_index,
+            team_bind=self.team_bind,
+            all_bind=self.all_bind,
+            translate_enabled=(
+                self.translate_to_english.isChecked()
+            ),
+            controller=self.controller,
+        )
+        dialog.exec()
+
+        self.refresh_health_status()
+
+    def refresh_bind_conflict_ui(self):
+        conflict = bool(
+            self.team_bind
+            and self.all_bind
+            and self.team_bind == self.all_bind
+        )
+
+        for button in (
+            self.team_button,
+            self.all_button,
+        ):
+            button.setProperty(
+                "bindConflict",
+                conflict,
+            )
+
+            button.style().unpolish(
+                button
+            )
+            button.style().polish(
+                button
+            )
+
+        if conflict:
+            self.bind_warning.setText(
+                "⚠ Командный и общий чат "
+                "назначены на одну кнопку."
+            )
+            self.bind_warning.show()
+        else:
+            self.bind_warning.clear()
+            self.bind_warning.hide()
 
     # ========================================================
     # Controller
@@ -1527,6 +2377,27 @@ class MainWindow(QMainWindow):
             self.stop_controller()
 
     def start_controller(self):
+        self.refresh_health_status()
+
+        report = getattr(
+            self,
+            "current_health_report",
+            None,
+        )
+
+        if (
+            report is not None
+            and not report.ready
+        ):
+            QMessageBox.warning(
+                self,
+                "Приложение не готово",
+                format_health_report(
+                    report
+                ),
+            )
+            return
+
         if self.team_bind == self.all_bind:
             self.set_status(
                 "Ошибка: бинды совпадают"
@@ -1542,6 +2413,8 @@ class MainWindow(QMainWindow):
                 "Ошибка: микрофон не выбран"
             )
             return
+
+        self.stop_mic_test()
 
         translate_enabled = (
             self.translate_to_english.isChecked()
@@ -1716,6 +2589,17 @@ class MainWindow(QMainWindow):
             enabled
         )
 
+        self.mic_test_button.setEnabled(
+            enabled
+        )
+
+        self.setup_button.setEnabled(
+            enabled
+        )
+
+        if not enabled:
+            self.stop_mic_test()
+
         self.team_button.setEnabled(
             enabled
         )
@@ -1770,10 +2654,28 @@ class MainWindow(QMainWindow):
 
     def set_last_text(self, text):
         self.last_text.setText(text)
+        self.pending_history_text = text
 
     def set_timing(self, seconds):
         self.timing_label.setText(
             f"Обработка: {seconds:.3f} сек."
+        )
+
+        if self.pending_history_text:
+            add_history_entry(
+                self.pending_history_text,
+                seconds,
+            )
+            self.pending_history_text = ""
+
+        self.dota_status_timer = QTimer(
+            self
+        )
+        self.dota_status_timer.setInterval(
+            1500
+        )
+        self.dota_status_timer.timeout.connect(
+            self.refresh_dota_status
         )
 
     # ========================================================
@@ -1818,13 +2720,43 @@ class MainWindow(QMainWindow):
             "start_minimized":
                 self.start_minimized
                 .isChecked(),
+
+            "onboarding_completed":
+                bool(
+                    self.settings.get(
+                        "onboarding_completed",
+                        False,
+                    )
+                ),
         }
+
+        self.settings = settings
 
         save_settings(settings)
 
         set_autostart(
             settings["autostart"]
         )
+
+    # ========================================================
+    # History / custom dictionary
+    # ========================================================
+
+    def show_history_dialog(self):
+        HistoryDialog(self).exec()
+
+    def show_custom_dictionary(self):
+        if self.controller is not None or self.loading:
+            QMessageBox.information(
+                self,
+                "Пользовательский словарь",
+                "Сначала останови распознавание, чтобы обновить словарь.",
+            )
+            return
+
+        dialog = CustomDictionaryDialog(self)
+        if dialog.exec():
+            self.set_status("Пользовательский словарь сохранён")
 
     # ========================================================
     # About / Updates
@@ -2007,6 +2939,37 @@ class MainWindow(QMainWindow):
     # Window behavior
     # ========================================================
 
+    def showEvent(self, event):
+        super().showEvent(event)
+
+        if self._initial_positioned:
+            return
+
+        self._initial_positioned = True
+
+        QTimer.singleShot(
+            0,
+            self.center_on_screen,
+        )
+
+    def center_on_screen(self):
+        screen = self.screen()
+
+        if screen is None:
+            screen = QApplication.primaryScreen()
+
+        if screen is None:
+            return
+
+        available = screen.availableGeometry()
+        frame = self.frameGeometry()
+        frame.moveCenter(
+            available.center()
+        )
+        self.move(
+            frame.topLeft()
+        )
+
     def changeEvent(self, event):
         super().changeEvent(event)
 
@@ -2032,6 +2995,7 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event):
+        self.stop_mic_test()
         self.save_current_settings()
 
         if (
@@ -2067,6 +3031,7 @@ class MainWindow(QMainWindow):
 
     def quit_application(self):
         self.force_quit = True
+        self.stop_mic_test()
 
         if (
             self.model_downloading

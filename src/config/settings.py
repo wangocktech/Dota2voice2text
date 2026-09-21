@@ -29,6 +29,8 @@ DEFAULT_SETTINGS = {
 
     "autostart": False,
     "start_minimized": False,
+
+    "onboarding_completed": False,
 }
 
 

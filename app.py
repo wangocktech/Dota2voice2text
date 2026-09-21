@@ -10,10 +10,14 @@ from src.version import (
     APP_VERSION,
 )
 from src.utils.app_icon import get_app_icon
+from src.utils.windows_app import configure_windows_app
+
 
 
 
 def main():
+    configure_windows_app()
+
     setup_logging()
 
     logging.info(

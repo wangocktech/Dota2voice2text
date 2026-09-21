@@ -8,6 +8,7 @@ from src.input.dota_sender import DotaChatSender
 from src.input.hotkeys import GlobalPTTListener
 from src.speech.gigaam_engine import GigaAMEngine
 from src.text.postprocessor import TextPostProcessor
+from src.utils.dota_status import is_dota_running
 from src.text.translator import EnglishTranslator
 from src.text.translation_model_manager import (
     is_translation_model_installed,
@@ -356,8 +357,18 @@ class VoiceController:
                     f"{total_time:.2f} сек."
                 )
             else:
+                if is_dota_running():
+                    status_text = (
+                        "Dota 2 запущена, "
+                        "но окно не активно"
+                    )
+                else:
+                    status_text = (
+                        "Dota 2 не запущена"
+                    )
+
                 self.on_status(
-                    "Dota 2 не активна"
+                    status_text
                 )
 
         except Exception as exc:

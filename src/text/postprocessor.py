@@ -1,4 +1,4 @@
-﻿import json
+import json
 import re
 from time import perf_counter
 
@@ -9,6 +9,10 @@ from rapidfuzz.distance import Levenshtein
 from tokenizers import Tokenizer
 
 
+from src.text.custom_dictionary import (
+    apply_custom_dictionary,
+    load_custom_dictionary,
+)
 from src.utils.paths import resource_path
 
 DATA_DIR = resource_path("data")
@@ -32,6 +36,8 @@ PUNCTUATION = {
 
 class TextPostProcessor:
     def __init__(self):
+        self.custom_dictionary = load_custom_dictionary()
+
         self.aliases = json.loads(
             (
                 DATA_DIR
@@ -109,6 +115,9 @@ class TextPostProcessor:
         self._punctuate(
             "проверка работы программы"
         )
+
+    def reload_custom_dictionary(self):
+        self.custom_dictionary = load_custom_dictionary()
 
     def _replace_aliases(
         self,
@@ -375,9 +384,14 @@ class TextPostProcessor:
 
         started = perf_counter()
 
+        corrected = apply_custom_dictionary(
+            text.strip(),
+            self.custom_dictionary,
+        )
+
         corrected = (
             self._replace_aliases(
-                text.strip()
+                corrected
             )
         )
 

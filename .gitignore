@@ -64,3 +64,13 @@ NEXT_STEPS.txt
 _*source*/
 installer/
 *.pyc
+
+# v0.3.x local helper scripts / backups
+APPLY_V030_*.ps1
+REPAIR_*V030*.ps1
+FINALIZE_V030*.ps1
+EXPORT_V030_SOURCE.ps1
+CLEAN_AND_BUILD_V030.ps1
+SETUP_V030_*.ps1
+FIX_V030_*.ps1
+_v030_*/

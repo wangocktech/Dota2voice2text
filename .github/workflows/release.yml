@@ -245,7 +245,7 @@ jobs:
 
           Push-Location ".\installer"
           try {
-            & $iscc ".\packaging\Dota2voice2text.iss"
+            & $iscc ".\Dota2voice2text.iss"
 
             if ($LASTEXITCODE -ne 0) {
               throw "Inno Setup build failed."

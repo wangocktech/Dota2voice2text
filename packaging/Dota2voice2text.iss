@@ -1,4 +1,4 @@
-﻿#define MyAppName "Dota2voice2text"
+#define MyAppName "Dota2voice2text"
 #define MyAppVersion "0.3.0"
 #define MyAppPublisher "wangocktech"
 #define MyAppURL "https://github.com/wangocktech/Dota2voice2text"
