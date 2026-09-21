@@ -26,6 +26,7 @@ class VoiceController:
         on_status=None,
         on_text=None,
         on_timing=None,
+        on_ptt=None,
     ):
         self.device_index = device_index
         self.team_bind = team_bind
@@ -34,6 +35,9 @@ class VoiceController:
         self.on_status = on_status or (lambda text: None)
         self.on_text = on_text or (lambda text: None)
         self.on_timing = on_timing or (lambda value: None)
+        self.on_ptt = on_ptt or (
+            lambda active, chat_type: None
+        )
 
         if (
             translate_to_english
@@ -106,6 +110,7 @@ class VoiceController:
             self.stream = None
 
         self.recording = False
+        self.on_ptt(False, self.chat_type or "")
         self.on_status("Остановлено")
 
     # ========================================================
@@ -180,6 +185,11 @@ class VoiceController:
 
         self.stream.start()
 
+        self.on_ptt(
+            True,
+            chat_type,
+        )
+
         if chat_type == "team":
             self.on_status(
                 "Слушаю → командный чат"
@@ -192,6 +202,11 @@ class VoiceController:
     def _stop_recording(self):
         if not self.recording:
             return
+
+        self.on_ptt(
+            False,
+            self.chat_type or "",
+        )
 
         self.release_time = perf_counter()
 

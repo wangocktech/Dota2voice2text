@@ -1,8 +1,8 @@
-﻿Dota2voice2text v0.3.0 — Phase 5 Self-Test
+﻿Dota PTT Overlay
 
-Установка:
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\INSTALL_V030_PHASE5.ps1
+1. Распакуй архив в любую папку.
+2. Запусти INSTALL_DOTA_PTT_OVERLAY.ps1 из корня проекта.
+3. Запусти приложение и нажми «Запустить».
+4. Открой Dota 2 и удерживай MOUSE5/MOUSE4.
 
-После установки:
-& ".\.venv313\Scripts\python.exe" ".\app.py"
+Иконка: 64 px контейнер / 48 px приложение, справа по центру игрового client area, 18 px от правого края.

@@ -30,6 +30,7 @@ from src.gui.about_dialog import AboutDialog
 from src.gui.custom_dictionary_dialog import CustomDictionaryDialog
 from src.gui.history_dialog import HistoryDialog
 from src.gui.onboarding_dialog import OnboardingDialog
+from src.gui.dota_ptt_overlay import DotaPttOverlay
 from src.gui.self_test_dialog import SelfTestDialog
 from src.config.autostart import set_autostart
 from src.config.settings import load_settings, save_settings
@@ -359,6 +360,7 @@ class MainWindow(QMainWindow):
     status_signal = Signal(str)
     text_signal = Signal(str)
     timing_signal = Signal(float)
+    ptt_signal = Signal(bool, str)
 
     bind_signal = Signal(str, str)
 
@@ -393,6 +395,8 @@ class MainWindow(QMainWindow):
         self.update_check_running = False
 
         self.settings = load_settings()
+
+        self.ptt_overlay = DotaPttOverlay()
 
         self.mic_monitor = (
             MicrophoneLevelMonitor(
@@ -464,6 +468,10 @@ class MainWindow(QMainWindow):
 
         self.timing_signal.connect(
             self.set_timing
+        )
+
+        self.ptt_signal.connect(
+            self._set_ptt_overlay
         )
 
         self.bind_signal.connect(
@@ -2494,6 +2502,9 @@ class MainWindow(QMainWindow):
 
                 on_timing=
                     self.timing_signal.emit,
+
+                on_ptt=
+                    self.ptt_signal.emit,
             )
 
             self.controller_ready.emit(
@@ -2554,6 +2565,8 @@ class MainWindow(QMainWindow):
         self.refresh_translation_model_ui()
 
     def stop_controller(self):
+        self.ptt_overlay.hide_overlay()
+
         if self.controller:
             self.controller.stop()
 
@@ -2617,6 +2630,20 @@ class MainWindow(QMainWindow):
         )
 
         self.refresh_translation_model_ui()
+
+    # ========================================================
+    # Dota PTT overlay
+    # ========================================================
+
+    def _set_ptt_overlay(
+        self,
+        active,
+        chat_type,
+    ):
+        self.ptt_overlay.set_ptt_active(
+            active,
+            chat_type,
+        )
 
     # ========================================================
     # Status
@@ -3019,6 +3046,8 @@ class MainWindow(QMainWindow):
         ):
             self.model_download_cancel.set()
 
+        self.ptt_overlay.hide_overlay()
+
         if self.controller:
             self.controller.stop()
             self.controller = None
@@ -3040,6 +3069,8 @@ class MainWindow(QMainWindow):
             self.model_download_cancel.set()
 
         self.save_current_settings()
+
+        self.ptt_overlay.hide_overlay()
 
         if self.controller:
             self.controller.stop()
