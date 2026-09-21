@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 $project = "C:\Users\wango\Desktop\dota2voice2text"
 
@@ -9,13 +9,13 @@ if (Test-Path (Join-Path (Get-Location) "app.py")) {
 $python = Join-Path $project ".venv313\Scripts\python.exe"
 
 if (-not (Test-Path $python)) {
-    throw "Не найден .venv313."
+    throw "Missing .venv313"
 }
 
 $manifest = Join-Path $project "data\translation_model_manifest.json"
 
 if (-not (Test-Path $manifest)) {
-    throw "Не найден translation_model_manifest.json."
+    throw "Missing data\translation_model_manifest.json"
 }
 
 $manifestData = Get-Content $manifest -Raw | ConvertFrom-Json
@@ -24,7 +24,7 @@ if (
     -not $manifestData.sha256 -or
     $manifestData.sha256 -eq ("0" * 64)
 ) {
-    throw "Сначала запусти PUBLISH_TRANSLATION_MODEL.ps1."
+    throw "Translation model manifest SHA-256 is not configured."
 }
 
 Push-Location $project
@@ -55,11 +55,15 @@ try {
         app.py
 
     if ($LASTEXITCODE -ne 0) {
-        throw "PyInstaller завершился с ошибкой."
+        throw "PyInstaller failed."
     }
 
     $dist = Join-Path $project "dist\Dota2voice2text"
     $exe = Join-Path $dist "Dota2voice2text.exe"
+
+    if (-not (Test-Path $exe)) {
+        throw "Built EXE not found: $exe"
+    }
 
     $size = (
         Get-ChildItem $dist -Recurse -File |
@@ -67,14 +71,9 @@ try {
     ).Sum
 
     Write-Host ""
-    Write-Host "ГОТОВО:" -ForegroundColor Green
-    Write-Host $exe
-    Write-Host (
-        "Размер папки: {0:N1} МБ" -f ($size / 1MB)
-    ) -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Модель RU→EN в сборку НЕ включена." -ForegroundColor Yellow
-    Write-Host "Она скачивается приложением при первом включении перевода." -ForegroundColor Yellow
+    Write-Host "BUILD OK" -ForegroundColor Green
+    Write-Host $exe -ForegroundColor Cyan
+    Write-Host ("Folder size: {0:N1} MB" -f ($size / 1MB)) -ForegroundColor Cyan
 }
 finally {
     Pop-Location
