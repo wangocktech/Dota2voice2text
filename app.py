@@ -9,6 +9,8 @@ from src.version import (
     APP_NAME,
     APP_VERSION,
 )
+from src.utils.app_icon import get_app_icon
+
 
 
 def main():
@@ -19,6 +21,7 @@ def main():
     )
 
     app = QApplication(sys.argv)
+    app.setWindowIcon(get_app_icon())
 
     app.setApplicationName(
         APP_NAME
@@ -40,6 +43,7 @@ def main():
     window = MainWindow(
         start_hidden=start_hidden
     )
+    window.setWindowIcon(get_app_icon())
 
     if window.start_hidden:
         window.hide()

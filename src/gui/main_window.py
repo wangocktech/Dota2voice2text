@@ -277,6 +277,8 @@ QMenu::item:selected {
     background-color: #5865F2;
 }
 """
+from src.utils.app_icon import get_app_icon
+
 
 
 class MainWindow(QMainWindow):
@@ -1899,6 +1901,7 @@ class MainWindow(QMainWindow):
             icon,
             self,
         )
+        self.tray.setIcon(get_app_icon())
 
         self.tray.setToolTip(
             "Dota2voice2text"

@@ -1,5 +1,7 @@
 ﻿<div align="center">
 
+<img src="assets/icons/app_icon.png" alt="Dota2voice2text" width="150">
+
 # 🎙️ Dota2voice2text
 
 ### Быстрый локальный Voice-to-Text для чата Dota 2
@@ -401,6 +403,8 @@ dist\Dota2voice2text\Dota2voice2text.exe
 
 <div align="center">
 
+<img src="assets/icons/app_icon.png" alt="Dota2voice2text" width="150">
+
 ### 🎙️ Speak → Recognize → Translate → Type
 
 [Releases](https://github.com/wangocktech/Dota2voice2text/releases) ·
@@ -408,5 +412,6 @@ dist\Dota2voice2text\Dota2voice2text.exe
 [License](LICENSE)
 
 </div>
+
 
 

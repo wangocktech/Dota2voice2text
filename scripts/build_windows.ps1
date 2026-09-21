@@ -39,6 +39,7 @@ try {
         --clean `
         --windowed `
         --name "Dota2voice2text" `
+        --icon "assets\icons\app_icon.ico" `
         --collect-all sherpa_onnx `
         --collect-all ctranslate2 `
         --collect-all sentencepiece `

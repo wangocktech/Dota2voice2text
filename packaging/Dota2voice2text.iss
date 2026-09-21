@@ -1,10 +1,11 @@
 ﻿#define MyAppName "Dota2voice2text"
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.3.0"
 #define MyAppPublisher "wangocktech"
 #define MyAppURL "https://github.com/wangocktech/Dota2voice2text"
 #define MyAppExeName "Dota2voice2text.exe"
 
 [Setup]
+SetupIconFile=..\assets\icons\app_icon.ico
 AppId={{AD778F93-8073-5542-8BB0-73943676F221}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -27,7 +28,7 @@ SetupLogging=yes
 CloseApplications=yes
 RestartApplications=no
 UninstallDisplayName={#MyAppName}
-UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayIcon={app}\Dota2voice2text.exe
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
@@ -56,3 +57,4 @@ Type: filesandordirs; Name: "{app}"
 
 ; Пользовательские настройки, скачанная RU→EN модель и логи находятся
 ; в %LOCALAPPDATA%\Dota2voice2text и намеренно не удаляются при uninstall.
+
